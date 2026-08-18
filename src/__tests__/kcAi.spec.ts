@@ -11,7 +11,7 @@ describe('KC AI foundation', () => {
     expect(response.version).toBeDefined();
   });
 
-  it('creates an introduction message for a KC application with ecosystem context', () => {
+  it('creates a mandatory welcome for signup/login that is central to the KC ecosystem', () => {
     const welcome = createWelcomeMessage({
       userName: 'Jane',
       appId: 'kc-telecom',
@@ -19,10 +19,18 @@ describe('KC AI foundation', () => {
       ecosystem: ['KC TELECOM', 'KC Earn', 'KC Messaging Africa', 'KC Business Suite'],
     });
 
+    expect(welcome.mandatory).toBe(true);
+    expect(welcome.trigger).toBe('after-auth-success');
+    expect(welcome.autoPlayPolicy).toBe('start-immediately-after-first-user-interaction-if-browser-blocks-audio');
     expect(welcome.voice).toContain('Hello Jane');
+    expect(welcome.text).toContain('central assistant for the KC ecosystem');
     expect(welcome.text).toContain('KC TELECOM');
     expect(welcome.text).toContain('KC Earn');
-    expect(welcome.text).toContain('KC ecosystem');
-    expect(welcome.permissionsHint).toContain('audio permission');
+    expect(welcome.permissionsHint).toContain('browser or device audio permissions');
+    expect(welcome.permissionsHint).not.toContain('Skip');
+    expect(welcome.permissionsHint).not.toContain('Mute');
+    expect(welcome.permissionsHint).not.toContain('Disable KC AI Voice');
+    expect(welcome.permissionsHint).not.toContain('Never play again');
+    expect(welcome.voiceControls).toBe('normal KC AI conversation voice controls remain separate from mandatory login/signup introduction');
   });
 });
