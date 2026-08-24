@@ -94,6 +94,26 @@ This repository contains the first usable autonomous KC AI foundation. It does n
 - Private Build Mode does not implement wallet ledger execution, payment-provider calls, funding, withdrawals, deployment, publication, or production activation. Those capabilities remain blocked until separately integrated, authorized, and verified.
 - Owner token issuance and identity lifecycle must be provided by a trusted KC identity service. This repository only verifies signed claims and does not issue owner credentials.
 
+## Future owner phone companion roadmap
+
+The future owner-only Android companion is planned, but is not implemented or exposed by this repository. Its purpose is to help the verified owner locate documents, photos, files, notes, and downloads on the owner's phone. It must use only Android's official file and document APIs and user-granted scoped access; it must never bypass permissions, passwords, screen locks, app security, encryption, or biometric protection.
+
+The companion roadmap is:
+
+1. Define a device enrollment and revocation flow bound to the verified Owner Mode identity.
+2. Add an Android client using the minimum permissions necessary and Storage Access Framework or other official scoped APIs.
+3. Treat voice recognition only as an identity signal. Require verified Owner Mode plus device authentication or another strong factor for sensitive retrievals and actions.
+4. Return truthful blocked or unavailable results when Android or another application denies access. Do not add surveillance, keylogging, credential extraction, hidden access, or cross-device access.
+5. Audit every sensitive search, retrieval, preview, and action with owner identity, device context, authorization result, and verification outcome. Keep phone credentials and private content out of browser responses and ordinary logs.
+
+Until these stages are separately implemented and tested, phone access remains unavailable and no phone data is read.
+
+## Future owner-only wallet roadmap
+
+The future multi-country, multi-currency wallet remains an owner-only private capability. Adding screens, records, or task states must never enable real-money functionality. Each country, currency, and payment rail must remain `planned` or blocked until its legitimate provider integration, credentials, compliance requirements, transaction verification, reconciliation, fraud controls, and security review are configured and tested.
+
+Wallet development must proceed through private development, validation, owner review, staging verification, and explicit owner approval. Approval does not deploy, publish, activate production, fund, withdraw, or execute a transaction. A public wallet product requires separate explicit authorization and a new security and compliance review.
+
 ## Autonomous task lifecycle
 
 Tasks are `received -> planning -> executing -> validating -> completed`. A missing capability, authorization, credential, payment, or external human interaction moves the task to `blocked`; an execution error moves it to `failed`. KC AI continues ordinary recoverable orchestration automatically and asks the owner only for the specific missing authorization, information, secret, payment, human interaction, or high-impact confirmation.
