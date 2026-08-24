@@ -15,6 +15,7 @@ import { createOwnerWallet, deriveWalletBalances, getOwnerWallet, listWalletRail
 import { authenticateOwner, authConfigurationStatus, issueStepUpToken, logoutOwner, verifyOwnerSession, verifyStepUpTokenForSession } from './services/authService';
 import { SecretBus, type SecretType } from './services/secretBusService';
 import { advancePrivateBuild, createPrivateBuild, getPrivateBuild, type PrivateBuildStatus } from './services/privateBuildService';
+import { verifySystem } from './services/systemVerificationService';
 
 const app = express();
 const port = env.KC_AI_PORT;
@@ -166,6 +167,14 @@ app.post('/api/v1/auth/reauthenticate', requireOwner, async (req: Request, res: 
     return;
   }
   res.json({ stepUpToken: token, expiresInSeconds: 300 });
+});
+
+app.post('/api/v1/owner/system-verification', requireOwner, async (req: Request, res: Response) => {
+  if (req.body?.message !== 'KC AI, verify your system.') {
+    res.status(400).json({ error: 'Use the exact system verification request' });
+    return;
+  }
+  res.json(await verifySystem(env.KC_AI_ENV, secretBus));
 });
 
 app.post('/api/v1/owner/private-build', requireOwner, requireStepUp, async (req: Request, res: Response) => {

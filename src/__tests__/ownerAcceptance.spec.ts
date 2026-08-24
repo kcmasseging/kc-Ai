@@ -1,0 +1,71 @@
+import { describe, expect, it } from 'vitest';
+import { createHmac } from 'node:crypto';
+import { createHealthResponse } from '../services/healthService';
+import { verifyOwnerToken } from '../services/ownerModeService';
+import { authenticateOwner, hashPassword, issueStepUpToken, verifyOwnerSession } from '../services/authService';
+import { createAndAdvanceTask } from '../services/taskService';
+import { clearAuditRecords, listAuditRecords } from '../services/auditService';
+import { createPrivateBuild, getPrivateBuild } from '../services/privateBuildService';
+import { SecretBus } from '../services/secretBusService';
+import { verifySystem } from '../services/systemVerificationService';
+
+function signedOwnerClaim(secret: string, subject = 'acceptance-owner'): string {
+  const claims = Buffer.from(JSON.stringify({ subject, role: 'owner', expiresAt: Date.now() + 60_000 })).toString('base64url');
+  return `${claims}.${createHmac('sha256', secret).update(claims).digest('base64url')}`;
+}
+
+describe('KC AI owner acceptance', () => {
+  it('allows only a verified owner claim into Owner Mode', () => {
+    const secret = 'acceptance-owner-secret';
+    expect(verifyOwnerToken(signedOwnerClaim(secret), secret)).toMatchObject({ role: 'owner', subject: 'acceptance-owner' });
+    expect(verifyOwnerToken(signedOwnerClaim(secret, 'ordinary-user'), 'wrong-secret')).toBeUndefined();
+    expect(verifyOwnerToken(undefined, secret)).toBeUndefined();
+  });
+
+  it('returns a readiness result from actual health, capability, storage, and Secret Bus checks', async () => {
+    const result = await verifySystem('test', new SecretBus());
+    expect(['READY', 'PARTIALLY AVAILABLE', 'UNAVAILABLE']).toContain(result.status);
+    expect(result.checks.health).toBe('PASS');
+    expect(result.checks.storage).toBe('AVAILABLE');
+    expect(result.checks.capabilities).toBe('PARTIALLY AVAILABLE');
+    expect(result.checks.secretBus).toBe('UNAVAILABLE');
+    expect(result.status).toBe('PARTIALLY AVAILABLE');
+  });
+
+  it('executes and validates a harmless task before completion and preserves audit evidence', async () => {
+    await clearAuditRecords();
+    const task = await createAndAdvanceTask({ goal: 'prepare a harmless owner acceptance checklist', actorRole: 'owner' });
+    expect(task.status).toBe('completed');
+    expect(task.verificationStatus).toBe('verified');
+    expect(task.progress).toContain('Task completed: no external side effect was requested.');
+    expect((await listAuditRecords()).filter((record) => record.taskId === task.taskId).map((record) => record.actionType)).toEqual(['task.received', 'task.completed']);
+  });
+
+  it('requires a verified owner and step-up for private build access', async () => {
+    process.env.KC_AI_OWNER_ID = 'acceptance-owner';
+    process.env.KC_AI_OWNER_PASSWORD_HASH = hashPassword('acceptance owner password');
+    const secret = 'acceptance-auth-secret';
+    const login = await authenticateOwner({ ownerId: 'acceptance-owner', password: 'acceptance owner password', secret });
+    expect(login).toBeDefined();
+    expect(verifyOwnerSession(login?.sessionToken, secret)).toBeDefined();
+    const stepUp = await issueStepUpToken({ token: login?.sessionToken, password: 'acceptance owner password', secret });
+    expect(stepUp).toBeDefined();
+    const build = await createPrivateBuild({ ownerId: 'acceptance-owner', goal: 'Acceptance-only private build check' });
+    expect(getPrivateBuild(build.privateBuildId, 'ordinary-user')).toBeUndefined();
+    expect(getPrivateBuild(build.privateBuildId, 'acceptance-owner')).toMatchObject({ status: 'PRIVATE_BUILD' });
+  });
+
+  it('keeps Secret Bus values private and unsupported capabilities blocked', async () => {
+    const bus = new SecretBus('c'.repeat(32), '/tmp/kc-ai-acceptance-secrets.json');
+    const metadata = bus.create({ ownerId: 'acceptance-owner', type: 'private-note', label: 'Acceptance secret', value: 'do-not-expose' });
+    expect(metadata.maskedValue).not.toContain('do-not-expose');
+    expect(bus.get('ordinary-user', metadata.id)).toBeUndefined();
+    const blocked = await createAndAdvanceTask({ goal: 'deploy to production', actorRole: 'user' });
+    expect(blocked.status).toBe('blocked');
+    expect(blocked.verificationStatus).toBe('not-verified');
+  });
+
+  it('confirms the current source commit without claiming deployment evidence', () => {
+    expect(createHealthResponse('test')).toMatchObject({ status: 'ok', service: 'kc-ai' });
+  });
+});

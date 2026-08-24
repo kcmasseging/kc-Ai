@@ -41,6 +41,7 @@ The service stores a light session record and app context such as app ID and app
 - `POST /api/v1/chat` — process chat input with app-aware replies
 - `POST /api/v1/tts` — prepare a TTS-ready payload for frontend voice playback
 - `GET /api/v1/info` — metadata about supported ecosystem apps and service settings
+- `POST /api/v1/owner/system-verification` — owner-only verification for the exact message `KC AI, verify your system.`; the overall status is based on actual health, storage, capability, and Secret Bus checks and is only `READY`, `PARTIALLY AVAILABLE`, or `UNAVAILABLE`.
 
 ## Environment variables
 
@@ -137,6 +138,10 @@ The vault accepts key material only from `KC_AI_SECRET_BUS_KEY`; it is never har
 ## Audit and verification
 
 Audit entries contain action type, timestamp, task ID, actor role, outcome, verification state, and safe errors. Records are written through atomic, flushed local files with restrictive permissions; secret-like values are redacted before storage. The service does not fabricate tool, deployment, payment, or production verification results. The `verified` state is used only for the local orchestration task that has no external side effect.
+
+## Owner acceptance test
+
+The owner acceptance suite is in [ownerAcceptance.spec.ts](src/__tests__/ownerAcceptance.spec.ts). It verifies Owner Mode claims, actual system readiness checks, harmless task execution and audit evidence, Private Build Mode owner scoping, Secret Bus isolation, and truthful blocking of unsupported deployment. It does not verify a Railway deployment unless a deployed service and its source revision are externally available.
 
 ## Owner-only Private Build Mode
 
