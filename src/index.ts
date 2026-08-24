@@ -16,12 +16,18 @@ import { authenticateOwner, authConfigurationStatus, issueStepUpToken, logoutOwn
 import { SecretBus, type SecretType } from './services/secretBusService';
 import { advancePrivateBuild, createPrivateBuild, getPrivateBuild, type PrivateBuildStatus } from './services/privateBuildService';
 import { verifySystem } from './services/systemVerificationService';
+import { HealthWatchService } from './services/healthWatchService';
 
 const app = express();
 const port = env.KC_AI_PORT;
 const secretBus = new SecretBus(env.KC_AI_SECRET_BUS_KEY);
 configureStorage(env.KC_AI_STORAGE_DRIVER === 'postgres' ? new PostgresStorage({ connectionString: env.KC_AI_DATABASE_URL }) : new LocalStorage());
 const storageReady = initializeStorage();
+const healthWatch = new HealthWatchService();
+healthWatch.register({ product: 'KC AI', async check() {
+  try { await listTasks(); return { checks: [{ area: 'application availability', status: 'HEALTHY', evidence: JSON.stringify(createHealthResponse(env.KC_AI_ENV)) }] }; }
+  catch { return { checks: [{ area: 'storage', status: 'UNAVAILABLE', evidence: 'KC AI storage check failed' }] }; }
+} });
 
 function bearerToken(req: Request): string | undefined {
   const authorization = req.headers.authorization;
@@ -175,6 +181,14 @@ app.post('/api/v1/owner/system-verification', requireOwner, async (req: Request,
     return;
   }
   res.json(await verifySystem(env.KC_AI_ENV, secretBus));
+});
+
+app.post('/api/v1/owner/health-watch/scan', requireOwner, async (_req: Request, res: Response) => {
+  res.json({ snapshots: await healthWatch.scan(), scheduler: 'NOT_CONFIGURED' });
+});
+
+app.get('/api/v1/owner/health-watch/issues', requireOwner, (_req: Request, res: Response) => {
+  res.json({ issues: healthWatch.listIssues() });
 });
 
 app.post('/api/v1/owner/private-build', requireOwner, requireStepUp, async (req: Request, res: Response) => {

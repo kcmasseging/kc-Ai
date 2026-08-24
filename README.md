@@ -42,6 +42,8 @@ The service stores a light session record and app context such as app ID and app
 - `POST /api/v1/tts` — prepare a TTS-ready payload for frontend voice playback
 - `GET /api/v1/info` — metadata about supported ecosystem apps and service settings
 - `POST /api/v1/owner/system-verification` — owner-only verification for the exact message `KC AI, verify your system.`; the overall status is based on actual health, storage, capability, and Secret Bus checks and is only `READY`, `PARTIALLY AVAILABLE`, or `UNAVAILABLE`.
+- `POST /api/v1/owner/health-watch/scan` — owner-only checks against registered KC product adapters; reports `NOT_CONFIGURED` scheduler state when no periodic runtime is configured.
+- `GET /api/v1/owner/health-watch/issues` — owner-only issue and remediation records with redacted evidence.
 
 ## Environment variables
 
@@ -142,6 +144,12 @@ Audit entries contain action type, timestamp, task ID, actor role, outcome, veri
 ## Owner acceptance test
 
 The owner acceptance suite is in [ownerAcceptance.spec.ts](src/__tests__/ownerAcceptance.spec.ts). It verifies Owner Mode claims, actual system readiness checks, harmless task execution and audit evidence, Private Build Mode owner scoping, Secret Bus isolation, and truthful blocking of unsupported deployment. It does not verify a Railway deployment unless a deployed service and its source revision are externally available.
+
+## Owner-only ecosystem health watch
+
+The health-watch foundation in [healthWatchService.ts](src/services/healthWatchService.ts) uses registered product adapters rather than guessed connectivity. It supports application availability, HTTP/API diagnostics, deployment, database, jobs, webhooks, provider integrations, build/test, latency, configuration, authentication, security, and storage checks through adapter-defined check areas. KC AI is the only product with a local adapter today; KC Telecom, KC Earn, KC Messaging, KC Business Suite, KC Browser, and future products remain `UNVERIFIED` until their authorized adapters are connected.
+
+Health issues retain product, component, timestamp, severity, symptom, redacted evidence, probable cause, verification state, recommended action, remediation state, and resolution evidence. Stable fingerprints suppress repeated alerts. Safe repairs require an explicit repair adapter, rerun verification, and verified recovery evidence; deployment, migrations, provider/payment, financial, authentication, security, and destructive changes remain `OWNER_APPROVAL_REQUIRED`. No scheduler is configured or claimed, and no production system is modified automatically.
 
 ## Owner-only Private Build Mode
 
