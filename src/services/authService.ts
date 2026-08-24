@@ -85,23 +85,23 @@ function noteFailure(identifier: string, now: number): void {
   else existing.count += 1;
 }
 
-export function authenticateOwner(input: { ownerId: string; password: string; secret: string; now?: number }): AuthResult | undefined {
+export async function authenticateOwner(input: { ownerId: string; password: string; secret: string; now?: number }): Promise<AuthResult | undefined> {
   const now = input.now ?? Date.now();
   const ownerId = input.ownerId.trim();
   if (isRateLimited(ownerId, now)) {
-    recordAudit({ actionType: 'owner.login', actorRole: 'user', outcome: 'blocked', verificationStatus: 'not-verified', error: 'Rate limit exceeded' });
+    await recordAudit({ actionType: 'owner.login', actorRole: 'user', outcome: 'blocked', verificationStatus: 'not-verified', error: 'Rate limit exceeded' });
     return undefined;
   }
   const storedHash = configuredPasswordHash();
   const valid = Boolean(storedHash && ownerId === (process.env.KC_AI_OWNER_ID || 'owner') && verifyPassword(input.password, storedHash));
   if (!valid) {
     noteFailure(ownerId, now);
-    recordAudit({ actionType: 'owner.login', actorRole: 'user', outcome: 'failed', verificationStatus: 'not-verified', error: 'Invalid owner credentials' });
+    await recordAudit({ actionType: 'owner.login', actorRole: 'user', outcome: 'failed', verificationStatus: 'not-verified', error: 'Invalid owner credentials' });
     return undefined;
   }
   failures.delete(failureKey(ownerId));
   const session: OwnerSession = { subject: ownerId, role: 'owner', issuedAt: now, expiresAt: now + sessionTtlMs, sessionId: randomBytes(18).toString('hex') };
-  recordAudit({ actionType: 'owner.login', actorRole: 'owner', outcome: 'completed', verificationStatus: 'verified' });
+  await recordAudit({ actionType: 'owner.login', actorRole: 'owner', outcome: 'completed', verificationStatus: 'verified' });
   return { sessionToken: encodeSession(session, input.secret), expiresAt: session.expiresAt, ownerId };
 }
 
@@ -109,21 +109,21 @@ export function verifyOwnerSession(token: string | undefined, secret: string | u
   return decodeSession(token, secret, now);
 }
 
-export function logoutOwner(token: string | undefined, secret: string | undefined): boolean {
+export async function logoutOwner(token: string | undefined, secret: string | undefined): Promise<boolean> {
   const session = decodeSession(token, secret, Date.now());
   if (!session) return false;
   revokedSessions.add(session.sessionId);
-  recordAudit({ actionType: 'owner.logout', actorRole: 'owner', outcome: 'completed', verificationStatus: 'verified' });
+  await recordAudit({ actionType: 'owner.logout', actorRole: 'owner', outcome: 'completed', verificationStatus: 'verified' });
   return true;
 }
 
-export function issueStepUpToken(input: { token: string | undefined; password: string; secret: string; now?: number }): string | undefined {
+export async function issueStepUpToken(input: { token: string | undefined; password: string; secret: string; now?: number }): Promise<string | undefined> {
   const session = verifyOwnerSession(input.token, input.secret, input.now);
   const storedHash = configuredPasswordHash();
   if (!session || !storedHash || !verifyPassword(input.password, storedHash)) return undefined;
   const stepUpToken = randomBytes(32).toString('base64url');
   stepUpTokens.set(stepUpToken, { sessionId: session.sessionId, expiresAt: (input.now ?? Date.now()) + stepUpTtlMs });
-  recordAudit({ actionType: 'owner.reauthentication', actorRole: 'owner', outcome: 'completed', verificationStatus: 'verified' });
+  await recordAudit({ actionType: 'owner.reauthentication', actorRole: 'owner', outcome: 'completed', verificationStatus: 'verified' });
   return stepUpToken;
 }
 

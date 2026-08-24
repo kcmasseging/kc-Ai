@@ -1,4 +1,4 @@
-import { loadJsonArray, writeJsonArray } from './localStore';
+import { getStorage } from './storage';
 
 export type AuditOutcome = 'started' | 'completed' | 'blocked' | 'failed';
 
@@ -12,41 +12,22 @@ export interface AuditRecord {
   error?: string;
 }
 
-const records: AuditRecord[] = [];
-const auditStorePath = process.env.KC_AI_AUDIT_STORE_PATH || '.kc-ai-audit.json';
-
-function persistRecords(): void {
-  writeJsonArray(auditStorePath, records);
-}
-
-function loadRecords(): void {
-  records.push(...loadJsonArray<AuditRecord>(auditStorePath));
-}
-
-loadRecords();
-
 function safeError(error?: string): string | undefined {
   if (!error) return undefined;
   return error.replace(/(password|token|secret|api[-_ ]?key|credential)\s*[:=]\s*[^\s,;]+/gi, '$1=[REDACTED]');
 }
 
-export function recordAudit(input: Omit<AuditRecord, 'timestamp' | 'error'> & { error?: string }): AuditRecord {
+export async function recordAudit(input: Omit<AuditRecord, 'timestamp' | 'error'> & { error?: string }): Promise<AuditRecord> {
   const record: AuditRecord = { ...input, timestamp: new Date().toISOString(), error: safeError(input.error) };
-  records.push(record);
-  persistRecords();
-  return { ...record };
+  return getStorage().appendAudit(record);
 }
 
-export function listAuditRecords(): AuditRecord[] {
-  return records.map((record) => ({ ...record }));
+export function listAuditRecords(): Promise<AuditRecord[]> {
+  return getStorage().listAuditRecords();
 }
 
-export function clearAuditRecords(): void {
-  records.length = 0;
-  persistRecords();
+export function clearAuditRecords(): Promise<void> {
+  return getStorage().clearAuditRecords();
 }
 
-export function reloadAuditRecords(): void {
-  records.length = 0;
-  loadRecords();
-}
+export function reloadAuditRecords(): Promise<void> { return Promise.resolve(); }

@@ -82,13 +82,13 @@ This repository contains the first usable autonomous KC AI foundation. It does n
 - Owner Mode verifies a signed, expiring owner claim supplied as `Authorization: Bearer <token>`. A typed name or chat statement never grants owner privileges. The audit and Secret Bus status endpoints are owner-only.
 - Owner-only Private Build Mode requires both a verified Owner session and recent step-up re-authentication. It tracks private development work through `PRIVATE_BUILD -> VALIDATED -> OWNER_REVIEW_REQUIRED -> APPROVED_FOR_STAGING -> APPROVED_FOR_PRODUCTION`; approval never deploys, publishes, or activates real-money capabilities.
 - Private Build Mode tasks are associated with their private build context and remain in the existing private development/staging boundary. No browser/client code receives financial credentials, and no public route can activate the mode.
-- Important task actions create structured audit records with actor role, outcome, verification status, and redacted error text. Tasks and audit records persist locally through atomic, flushed files for single-process development use.
+- Important task actions create structured audit records with actor role, outcome, verification status, and redacted error text. Tasks, task history, and audit records use the configured storage adapter.
 - KC Secret Bus uses AES-256-GCM authenticated encryption in memory and requires `KC_AI_SECRET_BUS_KEY`. It never returns values through chat, logs, audit records, or status responses. Without that key it reports unavailable rather than pretending secure storage exists.
 - Temporary local task storage is marked by its filename and ignored by Git. No real credentials or vault contents belong in this repository.
 
 ## PLANNED / REQUIRES INFRASTRUCTURE
 
-- Durable highly available task and audit storage still requires a production database and retention policy. The current local stores are atomic and flushed, but remain single-process development storage.
+- Durable highly available task and audit storage requires a production database and retention policy. PostgreSQL is selected with `KC_AI_STORAGE_DRIVER=postgres` and `KC_AI_DATABASE_URL`; `KC_AI_DATABASE_SSL=true` enables certificate validation. The schema is in [migrations/001_initial.sql](migrations/001_initial.sql) and is applied transactionally at startup. Local stores remain the development fallback.
 - KC Secret Bus production use requires a managed key-management system, owner re-authentication/recovery policy, encrypted durable storage, rotation, backup, and access monitoring. The current memory implementation is only an inspectable foundation.
 - Product data changes, deployment, email, payments, and other external side effects require registered integrations, scoped authorization, credentials, and verification adapters. They are currently unavailable or planned.
 - Private Build Mode does not implement wallet ledger execution, payment-provider calls, funding, withdrawals, deployment, publication, or production activation. Those capabilities remain blocked until separately integrated, authorized, and verified.

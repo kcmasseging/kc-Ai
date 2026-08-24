@@ -1,22 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { checkCapability } from './capabilityService';
 import { recordAudit } from './auditService';
-import { loadJsonArray, writeJsonArray } from './localStore';
+import { getStorage } from './storage';
 import type { TaskRecord } from '../types/task';
-
-const tasks = new Map<string, TaskRecord>();
-const taskStorePath = process.env.KC_AI_TASK_STORE_PATH || '.kc-ai-tasks.json';
-
-for (const task of loadJsonArray<TaskRecord>(taskStorePath)) tasks.set(task.taskId, task);
-
-function persistTasks(): void {
-  writeJsonArray(taskStorePath, [...tasks.values()]);
-}
-
-export function reloadTasks(): void {
-  tasks.clear();
-  for (const task of loadJsonArray<TaskRecord>(taskStorePath)) tasks.set(task.taskId, task);
-}
 
 function inferCapability(goal: string): string {
   const normalized = goal.toLowerCase();
@@ -26,13 +12,13 @@ function inferCapability(goal: string): string {
   return 'task.orchestration';
 }
 
-export function createAndAdvanceTask(input: {
+export async function createAndAdvanceTask(input: {
   goal: string;
   privateBuildId?: string;
   appId?: string;
   appName?: string;
   actorRole?: 'system' | 'user' | 'owner';
-}): TaskRecord {
+}): Promise<TaskRecord> {
   const now = new Date().toISOString();
   const task: TaskRecord = {
     taskId: `task_${randomUUID()}`,
@@ -46,9 +32,8 @@ export function createAndAdvanceTask(input: {
     lastSuccessfulStep: 'Goal received.',
     verificationStatus: 'not-verified',
   };
-  tasks.set(task.taskId, task);
-  persistTasks();
-  recordAudit({ actionType: 'task.received', taskId: task.taskId, actorRole: input.actorRole || 'user', outcome: 'started', verificationStatus: 'not-verified' });
+  await getStorage().createTask(task);
+  await recordAudit({ actionType: 'task.received', taskId: task.taskId, actorRole: input.actorRole || 'user', outcome: 'started', verificationStatus: 'not-verified' });
 
   task.status = 'planning';
   task.progress.push('Planning required capability.');
@@ -62,8 +47,8 @@ export function createAndAdvanceTask(input: {
     task.progress.push(`Blocked: ${task.blockedReason}.`);
     task.lastError = task.blockedReason;
     task.updatedAt = new Date().toISOString();
-    persistTasks();
-    recordAudit({ actionType: 'task.blocked', taskId: task.taskId, actorRole: input.actorRole || 'user', outcome: 'blocked', verificationStatus: 'not-verified', error: task.blockedReason });
+    await getStorage().updateTask(task);
+    await recordAudit({ actionType: 'task.blocked', taskId: task.taskId, actorRole: input.actorRole || 'user', outcome: 'blocked', verificationStatus: 'not-verified', error: task.blockedReason });
     return { ...task, progress: [...task.progress] };
   }
 
@@ -75,16 +60,19 @@ export function createAndAdvanceTask(input: {
   task.progress.push('Task completed: no external side effect was requested.');
   task.lastSuccessfulStep = 'Task completed: no external side effect was requested.';
   task.updatedAt = new Date().toISOString();
-  persistTasks();
-  recordAudit({ actionType: 'task.completed', taskId: task.taskId, actorRole: input.actorRole || 'user', outcome: 'completed', verificationStatus: 'verified' });
+  await getStorage().updateTask(task);
+  await recordAudit({ actionType: 'task.completed', taskId: task.taskId, actorRole: input.actorRole || 'user', outcome: 'completed', verificationStatus: 'verified' });
   return { ...task, progress: [...task.progress] };
 }
 
-export function getTask(taskId: string): TaskRecord | undefined {
-  const task = tasks.get(taskId);
-  return task ? { ...task, progress: [...task.progress] } : undefined;
+export function getTask(taskId: string): Promise<TaskRecord | undefined> {
+  return getStorage().getTask(taskId);
 }
 
-export function listTasks(): TaskRecord[] {
-  return [...tasks.values()].map((task) => ({ ...task, progress: [...task.progress] }));
+export function listTasks(): Promise<TaskRecord[]> {
+  return getStorage().listTasks();
 }
+
+export function listTaskHistory(taskId: string) { return getStorage().listTaskHistory(taskId); }
+
+export async function reloadTasks(): Promise<void> { await getStorage().initialize(); }

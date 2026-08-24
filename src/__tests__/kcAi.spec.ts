@@ -11,6 +11,10 @@ import { clearAuditRecords, listAuditRecords, recordAudit, reloadAuditRecords } 
 import { createHmac } from 'node:crypto';
 import { readFileSync, unlinkSync } from 'node:fs';
 import { advancePrivateBuild, createPrivateBuild, getPrivateBuild } from '../services/privateBuildService';
+import { LocalStorage, StorageUnavailableError } from '../services/storage';
+import { PostgresStorage } from '../services/postgresStorage';
+import type { TaskRecord } from '../types/task';
+import { newDb } from 'pg-mem';
 
 describe('KC AI foundation', () => {
   it('creates a health response with status and service metadata', () => {
@@ -44,10 +48,10 @@ describe('KC AI foundation', () => {
     expect(welcome.voiceControls).toBe('normal KC AI conversation voice controls remain separate from mandatory login/signup introduction');
   });
 
-  it('blocks unsupported external work instead of claiming success', () => {
+  it('blocks unsupported external work instead of claiming success', async () => {
     expect(checkCapability('deployment').status).toBe('planned');
 
-    const task = createAndAdvanceTask({ goal: 'deploy this to production', appId: 'kc-telecom' });
+    const task = await createAndAdvanceTask({ goal: 'deploy this to production', appId: 'kc-telecom' });
 
     expect(task.status).toBe('blocked');
     expect(task.verificationStatus).toBe('not-verified');
@@ -78,40 +82,40 @@ describe('KC AI foundation', () => {
     unlinkSync(filePath);
   });
 
-  it('issues, expires, re-authenticates, and revokes owner sessions', () => {
+  it('issues, expires, re-authenticates, and revokes owner sessions', async () => {
     process.env.KC_AI_OWNER_ID = 'test-owner';
     process.env.KC_AI_OWNER_PASSWORD_HASH = hashPassword('correct horse battery staple');
     const secret = 'owner-session-test-secret';
-    const result = authenticateOwner({ ownerId: 'test-owner', password: 'correct horse battery staple', secret });
+    const result = await authenticateOwner({ ownerId: 'test-owner', password: 'correct horse battery staple', secret });
     expect(result).toBeDefined();
     expect(verifyOwnerSession(result?.sessionToken, secret)).toBeDefined();
     expect(verifyOwnerSession(result?.sessionToken, secret, result?.expiresAt)).toBeUndefined();
-    const stepUp = issueStepUpToken({ token: result?.sessionToken, password: 'correct horse battery staple', secret });
+    const stepUp = await issueStepUpToken({ token: result?.sessionToken, password: 'correct horse battery staple', secret });
     expect(verifyStepUpToken(stepUp)).toBe(true);
     expect(verifyStepUpTokenForSession(stepUp, 'wrong-session')).toBe(false);
-    expect(logoutOwner(result?.sessionToken, secret)).toBe(true);
+    expect(await logoutOwner(result?.sessionToken, secret)).toBe(true);
     expect(verifyOwnerSession(result?.sessionToken, secret)).toBeUndefined();
   });
 
-  it('records safe audit errors without sensitive values', () => {
-    clearAuditRecords();
-    recordAudit({ actionType: 'test', actorRole: 'owner', outcome: 'failed', verificationStatus: 'not-verified', error: 'token=do-not-log password=also-private' });
-    const audit = listAuditRecords();
+  it('records safe audit errors without sensitive values', async () => {
+    await clearAuditRecords();
+    await recordAudit({ actionType: 'test', actorRole: 'owner', outcome: 'failed', verificationStatus: 'not-verified', error: 'token=do-not-log password=also-private' });
+    const audit = await listAuditRecords();
     expect(audit[0].error).toBe('token=[REDACTED] password=[REDACTED]');
   });
 
-  it('reloads audit records from the atomic local store', () => {
-    clearAuditRecords();
-    const created = recordAudit({ actionType: 'persisted-test', actorRole: 'system', outcome: 'completed', verificationStatus: 'verified' });
-    reloadAuditRecords();
-    expect(listAuditRecords()).toContainEqual(created);
+  it('reloads audit records from the atomic local store', async () => {
+    await clearAuditRecords();
+    const created = await recordAudit({ actionType: 'persisted-test', actorRole: 'system', outcome: 'completed', verificationStatus: 'verified' });
+    await reloadAuditRecords();
+    expect(await listAuditRecords()).toContainEqual(created);
   });
 
-  it('reloads task state from the atomic local store', () => {
-    const task = createAndAdvanceTask({ goal: 'prepare a safe local checklist' });
-    expect(getTask(task.taskId)).toBeDefined();
+  it('reloads task state from the atomic local store', async () => {
+    const task = await createAndAdvanceTask({ goal: 'prepare a safe local checklist' });
+    expect(await getTask(task.taskId)).toBeDefined();
     reloadTasks();
-    expect(getTask(task.taskId)).toMatchObject({ taskId: task.taskId, status: 'completed', lastSuccessfulStep: expect.any(String) });
+    expect(await getTask(task.taskId)).toMatchObject({ taskId: task.taskId, status: 'completed', lastSuccessfulStep: expect.any(String) });
   });
 
   it('accepts only signed, unexpired Owner Mode claims', () => {
@@ -123,22 +127,69 @@ describe('KC AI foundation', () => {
     expect(verifyOwnerToken(`${claims}.invalid`, secret)).toBeUndefined();
   });
 
-  it('keeps private builds owner-scoped and requires ordered approval', () => {
-    const build = createPrivateBuild({ ownerId: 'owner-private', goal: 'Build a wallet in a private staging context' });
+  it('keeps private builds owner-scoped and requires ordered approval', async () => {
+    const build = await createPrivateBuild({ ownerId: 'owner-private', goal: 'Build a wallet in a private staging context' });
 
     expect(build.status).toBe('PRIVATE_BUILD');
     expect(build.privateContext).toBe('development-staging');
     expect(build.productionActivation).toBe('disabled');
     expect(getPrivateBuild(build.privateBuildId, 'other-owner')).toBeUndefined();
-    expect(advancePrivateBuild(build.privateBuildId, 'owner-private', 'APPROVED_FOR_PRODUCTION')).toBeUndefined();
+    expect(await advancePrivateBuild(build.privateBuildId, 'owner-private', 'APPROVED_FOR_PRODUCTION')).toBeUndefined();
 
-    expect(advancePrivateBuild(build.privateBuildId, 'owner-private', 'VALIDATED')?.status).toBe('VALIDATED');
-    expect(advancePrivateBuild(build.privateBuildId, 'owner-private', 'OWNER_REVIEW_REQUIRED')?.status).toBe('OWNER_REVIEW_REQUIRED');
-    expect(advancePrivateBuild(build.privateBuildId, 'owner-private', 'APPROVED_FOR_STAGING')?.status).toBe('APPROVED_FOR_STAGING');
-    const approved = advancePrivateBuild(build.privateBuildId, 'owner-private', 'APPROVED_FOR_PRODUCTION');
+    expect((await advancePrivateBuild(build.privateBuildId, 'owner-private', 'VALIDATED'))?.status).toBe('VALIDATED');
+    expect((await advancePrivateBuild(build.privateBuildId, 'owner-private', 'OWNER_REVIEW_REQUIRED'))?.status).toBe('OWNER_REVIEW_REQUIRED');
+    expect((await advancePrivateBuild(build.privateBuildId, 'owner-private', 'APPROVED_FOR_STAGING'))?.status).toBe('APPROVED_FOR_STAGING');
+    const approved = await advancePrivateBuild(build.privateBuildId, 'owner-private', 'APPROVED_FOR_PRODUCTION');
 
     expect(approved?.status).toBe('APPROVED_FOR_PRODUCTION');
     expect(approved?.productionActivation).toBe('disabled');
-    expect(advancePrivateBuild(build.privateBuildId, 'owner-private', 'APPROVED_FOR_PRODUCTION')).toBeUndefined();
+    expect(await advancePrivateBuild(build.privateBuildId, 'owner-private', 'APPROVED_FOR_PRODUCTION')).toBeUndefined();
+  });
+
+  it('persists PostgreSQL tasks, history, and audit records across adapter reload', async () => {
+    const database = newDb({ noAstCoverageCheck: true } as never);
+    const Pool = database.adapters.createPg().Pool;
+    const first = new PostgresStorage({ pool: new Pool() });
+    await first.initialize();
+    const task: TaskRecord = { taskId: 'db-task', goal: 'database test', status: 'received', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), progress: ['received'], verificationStatus: 'not-verified' };
+    await first.createTask(task);
+    const updated = { ...task, status: 'completed' as const, updatedAt: new Date().toISOString(), progress: ['received', 'completed'], verificationStatus: 'verified' as const };
+    await first.updateTask(updated);
+    const audit = await first.appendAudit({ actionType: 'db-test', timestamp: new Date().toISOString(), taskId: task.taskId, actorRole: 'system', outcome: 'completed', verificationStatus: 'verified' });
+    const second = new PostgresStorage({ pool: new Pool() });
+    await second.initialize();
+    expect(await second.getTask(task.taskId)).toMatchObject({ status: 'completed' });
+    expect(await second.listTaskHistory(task.taskId)).toHaveLength(2);
+    expect(await second.listAuditRecords()).toContainEqual(expect.objectContaining({ actionType: audit.actionType, taskId: audit.taskId, actorRole: audit.actorRole, outcome: audit.outcome, verificationStatus: audit.verificationStatus }));
+    await first.close(); await second.close();
+  });
+
+  it('serializes concurrent PostgreSQL task updates and preserves state history', async () => {
+    const database = newDb({ noAstCoverageCheck: true } as never);
+    const Pool = database.adapters.createPg().Pool;
+    const storage = new PostgresStorage({ pool: new Pool() });
+    await storage.initialize();
+    const task: TaskRecord = { taskId: 'concurrent-task', goal: 'concurrency test', status: 'received', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), progress: ['received'], verificationStatus: 'not-verified' };
+    await storage.createTask(task);
+    await Promise.all([
+      storage.updateTask({ ...task, status: 'planning', updatedAt: new Date().toISOString(), progress: ['received', 'planning'] }),
+      storage.updateTask({ ...task, status: 'executing', updatedAt: new Date().toISOString(), progress: ['received', 'executing'] }),
+    ]);
+    expect(await storage.listTaskHistory(task.taskId)).toHaveLength(3);
+    expect(['planning', 'executing']).toContain((await storage.getTask(task.taskId))?.status);
+    await storage.close();
+  });
+
+  it('reports failed database connections and recovers through local fallback', async () => {
+    const failed = new PostgresStorage({ pool: { connect: async () => { throw new Error('offline'); }, end: async () => {} } });
+    await expect(failed.initialize()).rejects.toBeInstanceOf(StorageUnavailableError);
+    const directory = `/tmp/kc-ai-storage-${Date.now()}`;
+    const local = new LocalStorage(`${directory}/tasks.json`, `${directory}/audit.json`, `${directory}/history.json`);
+    const task: TaskRecord = { taskId: 'fallback-task', goal: 'fallback test', status: 'completed', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), progress: ['completed'], verificationStatus: 'verified' };
+    await local.createTask(task);
+    await local.appendAudit({ actionType: 'fallback-test', timestamp: new Date().toISOString(), actorRole: 'system', outcome: 'completed', verificationStatus: 'verified' });
+    const recovered = new LocalStorage(`${directory}/tasks.json`, `${directory}/audit.json`, `${directory}/history.json`);
+    expect(await recovered.getTask(task.taskId)).toMatchObject({ status: 'completed' });
+    expect(await recovered.listAuditRecords()).toHaveLength(1);
   });
 });

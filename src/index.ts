@@ -7,8 +7,10 @@ import { createSessionRecord } from './services/sessionService';
 import { generateChatReply, ChatRequestSchema } from './services/chatService';
 import { createTtsResponse } from './services/ttsService';
 import { listCapabilities } from './services/capabilityService';
-import { createAndAdvanceTask, getTask, listTasks } from './services/taskService';
+import { createAndAdvanceTask, getTask, listTaskHistory, listTasks } from './services/taskService';
 import { listAuditRecords } from './services/auditService';
+import { initializeStorage, LocalStorage, configureStorage } from './services/storage';
+import { PostgresStorage } from './services/postgresStorage';
 import { authenticateOwner, authConfigurationStatus, issueStepUpToken, logoutOwner, verifyOwnerSession, verifyStepUpTokenForSession } from './services/authService';
 import { SecretBus, type SecretType } from './services/secretBusService';
 import { advancePrivateBuild, createPrivateBuild, getPrivateBuild, type PrivateBuildStatus } from './services/privateBuildService';
@@ -16,6 +18,8 @@ import { advancePrivateBuild, createPrivateBuild, getPrivateBuild, type PrivateB
 const app = express();
 const port = env.KC_AI_PORT;
 const secretBus = new SecretBus(env.KC_AI_SECRET_BUS_KEY);
+configureStorage(env.KC_AI_STORAGE_DRIVER === 'postgres' ? new PostgresStorage({ connectionString: env.KC_AI_DATABASE_URL }) : new LocalStorage());
+const storageReady = initializeStorage();
 
 function bearerToken(req: Request): string | undefined {
   const authorization = req.headers.authorization;
@@ -77,6 +81,11 @@ app.use((req, res, next) => {
   next();
 });
 
+app.use(async (_req, res, next) => {
+  try { await storageReady; next(); }
+  catch { res.status(503).json({ error: 'Configured durable storage is unavailable' }); }
+});
+
 app.get('/health', (_req: Request, res: Response) => {
   res.json(createHealthResponse(env.KC_AI_ENV));
 });
@@ -132,10 +141,10 @@ app.post('/api/v1/tts', (req: Request, res: Response) => {
   res.json(response);
 });
 
-app.post('/api/v1/auth/login', (req: Request, res: Response) => {
+app.post('/api/v1/auth/login', async (req: Request, res: Response) => {
   const ownerId = typeof req.body?.ownerId === 'string' ? req.body.ownerId : '';
   const password = typeof req.body?.password === 'string' ? req.body.password : '';
-  const result = authenticateOwner({ ownerId, password, secret: env.KC_AI_JWT_SECRET });
+  const result = await authenticateOwner({ ownerId, password, secret: env.KC_AI_JWT_SECRET });
   if (!result) {
     res.status(401).json({ error: 'Invalid owner credentials or authentication is not configured' });
     return;
@@ -143,14 +152,14 @@ app.post('/api/v1/auth/login', (req: Request, res: Response) => {
   res.json(result);
 });
 
-app.post('/api/v1/auth/logout', requireOwner, (req: Request, res: Response) => {
-  logoutOwner(bearerToken(req), env.KC_AI_JWT_SECRET);
+app.post('/api/v1/auth/logout', requireOwner, async (req: Request, res: Response) => {
+  await logoutOwner(bearerToken(req), env.KC_AI_JWT_SECRET);
   res.status(204).send();
 });
 
-app.post('/api/v1/auth/reauthenticate', requireOwner, (req: Request, res: Response) => {
+app.post('/api/v1/auth/reauthenticate', requireOwner, async (req: Request, res: Response) => {
   const password = typeof req.body?.password === 'string' ? req.body.password : '';
-  const token = issueStepUpToken({ token: bearerToken(req), password, secret: env.KC_AI_JWT_SECRET });
+  const token = await issueStepUpToken({ token: bearerToken(req), password, secret: env.KC_AI_JWT_SECRET });
   if (!token) {
     res.status(401).json({ error: 'Owner re-authentication failed' });
     return;
@@ -158,35 +167,35 @@ app.post('/api/v1/auth/reauthenticate', requireOwner, (req: Request, res: Respon
   res.json({ stepUpToken: token, expiresInSeconds: 300 });
 });
 
-app.post('/api/v1/owner/private-build', requireOwner, requireStepUp, (req: Request, res: Response) => {
+app.post('/api/v1/owner/private-build', requireOwner, requireStepUp, async (req: Request, res: Response) => {
   if (typeof req.body?.goal !== 'string' || req.body.goal.trim().length === 0) {
     res.status(400).json({ error: 'A non-empty private build goal is required' });
     return;
   }
-  res.status(201).json({ build: createPrivateBuild({ ownerId: res.locals.owner.subject, goal: req.body.goal }) });
+  res.status(201).json({ build: await createPrivateBuild({ ownerId: res.locals.owner.subject, goal: req.body.goal }) });
 });
 
 app.get('/api/v1/owner/private-build/:privateBuildId', requireOwner, requirePrivateBuild, (_req: Request, res: Response) => {
   res.json({ build: res.locals.privateBuild });
 });
 
-app.post('/api/v1/owner/private-build/:privateBuildId/tasks', requireOwner, requireStepUp, requirePrivateBuild, (req: Request, res: Response) => {
+app.post('/api/v1/owner/private-build/:privateBuildId/tasks', requireOwner, requireStepUp, requirePrivateBuild, async (req: Request, res: Response) => {
   if (typeof req.body?.goal !== 'string' || req.body.goal.trim().length === 0) {
     res.status(400).json({ error: 'A non-empty private build task goal is required' });
     return;
   }
-  const task = createAndAdvanceTask({ goal: req.body.goal, privateBuildId: res.locals.privateBuild.privateBuildId, actorRole: 'owner' });
+  const task = await createAndAdvanceTask({ goal: req.body.goal, privateBuildId: res.locals.privateBuild.privateBuildId, actorRole: 'owner' });
   res.status(task.status === 'blocked' ? 409 : 201).json({ task });
 });
 
-app.post('/api/v1/owner/private-build/:privateBuildId/transition', requireOwner, requireStepUp, requirePrivateBuild, (req: Request, res: Response) => {
+app.post('/api/v1/owner/private-build/:privateBuildId/transition', requireOwner, requireStepUp, requirePrivateBuild, async (req: Request, res: Response) => {
   const target = req.body?.target;
   const statuses: PrivateBuildStatus[] = ['PRIVATE_BUILD', 'VALIDATED', 'OWNER_REVIEW_REQUIRED', 'APPROVED_FOR_STAGING', 'APPROVED_FOR_PRODUCTION'];
   if (typeof target !== 'string' || !statuses.includes(target as PrivateBuildStatus)) {
     res.status(400).json({ error: 'A valid private build lifecycle target is required' });
     return;
   }
-  const build = advancePrivateBuild(res.locals.privateBuild.privateBuildId, res.locals.owner.subject, target as PrivateBuildStatus);
+  const build = await advancePrivateBuild(res.locals.privateBuild.privateBuildId, res.locals.owner.subject, target as PrivateBuildStatus);
   if (!build) {
     res.status(409).json({ error: 'Private Build Mode lifecycle transition is not valid' });
     return;
@@ -198,13 +207,13 @@ app.get('/api/v1/capabilities', (_req: Request, res: Response) => {
   res.json({ capabilities: listCapabilities() });
 });
 
-app.post('/api/v1/tasks', (req: Request, res: Response) => {
+app.post('/api/v1/tasks', async (req: Request, res: Response) => {
   if (typeof req.body?.goal !== 'string' || req.body.goal.trim().length === 0) {
     res.status(400).json({ error: 'A non-empty goal is required' });
     return;
   }
 
-  const task = createAndAdvanceTask({
+  const task = await createAndAdvanceTask({
     goal: req.body.goal,
     appId: req.body.appId,
     appName: req.body.appName,
@@ -213,9 +222,9 @@ app.post('/api/v1/tasks', (req: Request, res: Response) => {
   res.status(task.status === 'blocked' ? 409 : 201).json({ task });
 });
 
-app.get('/api/v1/tasks/:taskId', (req: Request, res: Response) => {
+app.get('/api/v1/tasks/:taskId', async (req: Request, res: Response) => {
   const taskId = Array.isArray(req.params.taskId) ? req.params.taskId[0] : req.params.taskId;
-  const task = getTask(taskId);
+  const task = await getTask(taskId);
   if (!task) {
     res.status(404).json({ error: 'Task not found' });
     return;
@@ -223,12 +232,17 @@ app.get('/api/v1/tasks/:taskId', (req: Request, res: Response) => {
   res.json({ task });
 });
 
-app.get('/api/v1/tasks', (_req: Request, res: Response) => {
-  res.json({ tasks: listTasks() });
+app.get('/api/v1/tasks', async (_req: Request, res: Response) => {
+  res.json({ tasks: await listTasks() });
 });
 
-app.get('/api/v1/owner/audit', requireOwner, (_req: Request, res: Response) => {
-  res.json({ records: listAuditRecords() });
+app.get('/api/v1/tasks/:taskId/history', async (req: Request, res: Response) => {
+  const taskId = Array.isArray(req.params.taskId) ? req.params.taskId[0] : req.params.taskId;
+  res.json({ history: await listTaskHistory(taskId) });
+});
+
+app.get('/api/v1/owner/audit', requireOwner, async (_req: Request, res: Response) => {
+  res.json({ records: await listAuditRecords() });
 });
 
 app.get('/api/v1/owner/secret-bus/status', requireOwner, (_req: Request, res: Response) => {
