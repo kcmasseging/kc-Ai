@@ -41,6 +41,7 @@ function inferCapability(goal: string): string {
 
 export function createAndAdvanceTask(input: {
   goal: string;
+  privateBuildId?: string;
   appId?: string;
   appName?: string;
   actorRole?: 'system' | 'user' | 'owner';
@@ -49,6 +50,7 @@ export function createAndAdvanceTask(input: {
   const task: TaskRecord = {
     taskId: `task_${randomUUID()}`,
     goal: input.goal.trim(),
+    privateBuildId: input.privateBuildId,
     appContext: input.appId || input.appName ? { appId: input.appId, appName: input.appName } : undefined,
     status: 'received',
     createdAt: now,

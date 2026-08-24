@@ -80,6 +80,8 @@ This repository contains the first usable autonomous KC AI foundation. It does n
 - `GET /api/v1/tasks/:taskId` reads task progress. Non-secret task records persist to the local path in `KC_AI_TASK_STORE_PATH` with restrictive file permissions. This is single-process development storage.
 - `GET /api/v1/capabilities` exposes the Capability Truth Contract. Each capability is `available`, `planned`, or blocked by a specific requirement such as credentials or an external integration.
 - Owner Mode verifies a signed, expiring owner claim supplied as `Authorization: Bearer <token>`. A typed name or chat statement never grants owner privileges. The audit and Secret Bus status endpoints are owner-only.
+- Owner-only Private Build Mode requires both a verified Owner session and recent step-up re-authentication. It tracks private development work through `PRIVATE_BUILD -> VALIDATED -> OWNER_REVIEW_REQUIRED -> APPROVED_FOR_STAGING -> APPROVED_FOR_PRODUCTION`; approval never deploys, publishes, or activates real-money capabilities.
+- Private Build Mode tasks are associated with their private build context and remain in the existing private development/staging boundary. No browser/client code receives financial credentials, and no public route can activate the mode.
 - Important task actions create structured in-memory audit records with actor role, outcome, verification status, and redacted error text.
 - KC Secret Bus uses AES-256-GCM authenticated encryption in memory and requires `KC_AI_SECRET_BUS_KEY`. It never returns values through chat, logs, audit records, or status responses. Without that key it reports unavailable rather than pretending secure storage exists.
 - Temporary local task storage is marked by its filename and ignored by Git. No real credentials or vault contents belong in this repository.
@@ -89,6 +91,7 @@ This repository contains the first usable autonomous KC AI foundation. It does n
 - Durable highly available task and audit storage requires a production database and retention policy.
 - KC Secret Bus production use requires a managed key-management system, owner re-authentication/recovery policy, encrypted durable storage, rotation, backup, and access monitoring. The current memory implementation is only an inspectable foundation.
 - Product data changes, deployment, email, payments, and other external side effects require registered integrations, scoped authorization, credentials, and verification adapters. They are currently unavailable or planned.
+- Private Build Mode does not implement wallet ledger execution, payment-provider calls, funding, withdrawals, deployment, publication, or production activation. Those capabilities remain blocked until separately integrated, authorized, and verified.
 - Owner token issuance and identity lifecycle must be provided by a trusted KC identity service. This repository only verifies signed claims and does not issue owner credentials.
 
 ## Autonomous task lifecycle
@@ -106,6 +109,12 @@ The vault accepts key material only from `KC_AI_SECRET_BUS_KEY`; it is never har
 ## Audit and verification
 
 Audit entries contain action type, timestamp, task ID, actor role, outcome, verification state, and safe errors. Secret-like values are redacted before storage. The service does not fabricate tool, deployment, payment, or production verification results. The `verified` state is used only for the local orchestration task that has no external side effect.
+
+## Owner-only Private Build Mode
+
+`POST /api/v1/owner/private-build` starts a private build only after Owner Mode and step-up authentication succeed. `POST /api/v1/owner/private-build/:privateBuildId/tasks` creates owner-scoped tasks with private-build provenance. Lifecycle transitions use `POST /api/v1/owner/private-build/:privateBuildId/transition` and require the next state in order; invalid jumps and cross-owner access fail closed.
+
+The final `APPROVED_FOR_PRODUCTION` state is an explicit owner approval record, not a release command. Production/public release, real financial transactions, and payment-provider credentials remain separate capabilities and are not enabled by development completion.
 
 ## Integration guidance for KC applications
 

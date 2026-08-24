@@ -6,10 +6,11 @@ import { createAndAdvanceTask } from '../services/taskService';
 import { getTask, reloadTasks } from '../services/taskService';
 import { SecretBus } from '../services/secretBusService';
 import { verifyOwnerToken } from '../services/ownerModeService';
-import { authenticateOwner, hashPassword, issueStepUpToken, logoutOwner, verifyOwnerSession, verifyStepUpToken } from '../services/authService';
+import { authenticateOwner, hashPassword, issueStepUpToken, logoutOwner, verifyOwnerSession, verifyStepUpToken, verifyStepUpTokenForSession } from '../services/authService';
 import { clearAuditRecords, listAuditRecords, recordAudit } from '../services/auditService';
 import { createHmac } from 'node:crypto';
 import { readFileSync, unlinkSync } from 'node:fs';
+import { advancePrivateBuild, createPrivateBuild, getPrivateBuild } from '../services/privateBuildService';
 
 describe('KC AI foundation', () => {
   it('creates a health response with status and service metadata', () => {
@@ -87,6 +88,7 @@ describe('KC AI foundation', () => {
     expect(verifyOwnerSession(result?.sessionToken, secret, result?.expiresAt)).toBeUndefined();
     const stepUp = issueStepUpToken({ token: result?.sessionToken, password: 'correct horse battery staple', secret });
     expect(verifyStepUpToken(stepUp)).toBe(true);
+    expect(verifyStepUpTokenForSession(stepUp, 'wrong-session')).toBe(false);
     expect(logoutOwner(result?.sessionToken, secret)).toBe(true);
     expect(verifyOwnerSession(result?.sessionToken, secret)).toBeUndefined();
   });
@@ -112,5 +114,24 @@ describe('KC AI foundation', () => {
 
     expect(verifyOwnerToken(`${claims}.${signature}`, secret)).toMatchObject({ subject: 'owner-1', role: 'owner' });
     expect(verifyOwnerToken(`${claims}.invalid`, secret)).toBeUndefined();
+  });
+
+  it('keeps private builds owner-scoped and requires ordered approval', () => {
+    const build = createPrivateBuild({ ownerId: 'owner-private', goal: 'Build a wallet in a private staging context' });
+
+    expect(build.status).toBe('PRIVATE_BUILD');
+    expect(build.privateContext).toBe('development-staging');
+    expect(build.productionActivation).toBe('disabled');
+    expect(getPrivateBuild(build.privateBuildId, 'other-owner')).toBeUndefined();
+    expect(advancePrivateBuild(build.privateBuildId, 'owner-private', 'APPROVED_FOR_PRODUCTION')).toBeUndefined();
+
+    expect(advancePrivateBuild(build.privateBuildId, 'owner-private', 'VALIDATED')?.status).toBe('VALIDATED');
+    expect(advancePrivateBuild(build.privateBuildId, 'owner-private', 'OWNER_REVIEW_REQUIRED')?.status).toBe('OWNER_REVIEW_REQUIRED');
+    expect(advancePrivateBuild(build.privateBuildId, 'owner-private', 'APPROVED_FOR_STAGING')?.status).toBe('APPROVED_FOR_STAGING');
+    const approved = advancePrivateBuild(build.privateBuildId, 'owner-private', 'APPROVED_FOR_PRODUCTION');
+
+    expect(approved?.status).toBe('APPROVED_FOR_PRODUCTION');
+    expect(approved?.productionActivation).toBe('disabled');
+    expect(advancePrivateBuild(build.privateBuildId, 'owner-private', 'APPROVED_FOR_PRODUCTION')).toBeUndefined();
   });
 });

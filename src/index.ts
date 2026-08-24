@@ -9,8 +9,9 @@ import { createTtsResponse } from './services/ttsService';
 import { listCapabilities } from './services/capabilityService';
 import { createAndAdvanceTask, getTask, listTasks } from './services/taskService';
 import { listAuditRecords } from './services/auditService';
-import { authenticateOwner, authConfigurationStatus, issueStepUpToken, logoutOwner, verifyOwnerSession, verifyStepUpToken } from './services/authService';
+import { authenticateOwner, authConfigurationStatus, issueStepUpToken, logoutOwner, verifyOwnerSession, verifyStepUpTokenForSession } from './services/authService';
 import { SecretBus, type SecretType } from './services/secretBusService';
+import { advancePrivateBuild, createPrivateBuild, getPrivateBuild, type PrivateBuildStatus } from './services/privateBuildService';
 
 const app = express();
 const port = env.KC_AI_PORT;
@@ -36,10 +37,22 @@ function requireOwner(req: Request, res: Response, next: NextFunction): void {
 }
 
 function requireStepUp(req: Request, res: Response, next: NextFunction): void {
-  if (!verifyStepUpToken(req.headers['x-kc-step-up'] as string | undefined)) {
+  const claims = ownerClaims(req);
+  if (!claims || !verifyStepUpTokenForSession(req.headers['x-kc-step-up'] as string | undefined, claims.sessionId)) {
     res.status(403).json({ error: 'Recent owner re-authentication is required', requiredAction: 'POST /api/v1/auth/reauthenticate' });
     return;
   }
+  next();
+}
+
+function requirePrivateBuild(req: Request, res: Response, next: NextFunction): void {
+  const privateBuildId = Array.isArray(req.params.privateBuildId) ? req.params.privateBuildId[0] : req.params.privateBuildId;
+  const build = privateBuildId ? getPrivateBuild(privateBuildId, res.locals.owner.subject) : undefined;
+  if (!build) {
+    res.status(404).json({ error: 'Private Build Mode context not found' });
+    return;
+  }
+  res.locals.privateBuild = build;
   next();
 }
 
@@ -54,7 +67,7 @@ app.use((req, res, next) => {
   }
 
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-KC-Step-Up');
 
   if (req.method === 'OPTIONS') {
     res.sendStatus(204);
@@ -143,6 +156,42 @@ app.post('/api/v1/auth/reauthenticate', requireOwner, (req: Request, res: Respon
     return;
   }
   res.json({ stepUpToken: token, expiresInSeconds: 300 });
+});
+
+app.post('/api/v1/owner/private-build', requireOwner, requireStepUp, (req: Request, res: Response) => {
+  if (typeof req.body?.goal !== 'string' || req.body.goal.trim().length === 0) {
+    res.status(400).json({ error: 'A non-empty private build goal is required' });
+    return;
+  }
+  res.status(201).json({ build: createPrivateBuild({ ownerId: res.locals.owner.subject, goal: req.body.goal }) });
+});
+
+app.get('/api/v1/owner/private-build/:privateBuildId', requireOwner, requirePrivateBuild, (_req: Request, res: Response) => {
+  res.json({ build: res.locals.privateBuild });
+});
+
+app.post('/api/v1/owner/private-build/:privateBuildId/tasks', requireOwner, requireStepUp, requirePrivateBuild, (req: Request, res: Response) => {
+  if (typeof req.body?.goal !== 'string' || req.body.goal.trim().length === 0) {
+    res.status(400).json({ error: 'A non-empty private build task goal is required' });
+    return;
+  }
+  const task = createAndAdvanceTask({ goal: req.body.goal, privateBuildId: res.locals.privateBuild.privateBuildId, actorRole: 'owner' });
+  res.status(task.status === 'blocked' ? 409 : 201).json({ task });
+});
+
+app.post('/api/v1/owner/private-build/:privateBuildId/transition', requireOwner, requireStepUp, requirePrivateBuild, (req: Request, res: Response) => {
+  const target = req.body?.target;
+  const statuses: PrivateBuildStatus[] = ['PRIVATE_BUILD', 'VALIDATED', 'OWNER_REVIEW_REQUIRED', 'APPROVED_FOR_STAGING', 'APPROVED_FOR_PRODUCTION'];
+  if (typeof target !== 'string' || !statuses.includes(target as PrivateBuildStatus)) {
+    res.status(400).json({ error: 'A valid private build lifecycle target is required' });
+    return;
+  }
+  const build = advancePrivateBuild(res.locals.privateBuild.privateBuildId, res.locals.owner.subject, target as PrivateBuildStatus);
+  if (!build) {
+    res.status(409).json({ error: 'Private Build Mode lifecycle transition is not valid' });
+    return;
+  }
+  res.json({ build });
 });
 
 app.get('/api/v1/capabilities', (_req: Request, res: Response) => {

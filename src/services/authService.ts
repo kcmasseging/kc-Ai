@@ -21,7 +21,7 @@ const maxFailures = 5;
 const failureWindowMs = 15 * 60 * 1000;
 const failures = new Map<string, { count: number; resetAt: number }>();
 const revokedSessions = new Set<string>();
-const stepUpTokens = new Map<string, number>();
+const stepUpTokens = new Map<string, { sessionId: string; expiresAt: number }>();
 
 function configuredPasswordHash(): string | undefined {
   return process.env.KC_AI_OWNER_PASSWORD_HASH || process.env.KC_AI_OWNER_BOOTSTRAP_PASSWORD
@@ -122,15 +122,19 @@ export function issueStepUpToken(input: { token: string | undefined; password: s
   const storedHash = configuredPasswordHash();
   if (!session || !storedHash || !verifyPassword(input.password, storedHash)) return undefined;
   const stepUpToken = randomBytes(32).toString('base64url');
-  stepUpTokens.set(stepUpToken, (input.now ?? Date.now()) + stepUpTtlMs);
+  stepUpTokens.set(stepUpToken, { sessionId: session.sessionId, expiresAt: (input.now ?? Date.now()) + stepUpTtlMs });
   recordAudit({ actionType: 'owner.reauthentication', actorRole: 'owner', outcome: 'completed', verificationStatus: 'verified' });
   return stepUpToken;
 }
 
 export function verifyStepUpToken(token: string | undefined, now = Date.now()): boolean {
+  return verifyStepUpTokenForSession(token, undefined, now);
+}
+
+export function verifyStepUpTokenForSession(token: string | undefined, sessionId: string | undefined, now = Date.now()): boolean {
   if (!token) return false;
-  const expiresAt = stepUpTokens.get(token);
-  if (!expiresAt || expiresAt <= now) {
+  const entry = stepUpTokens.get(token);
+  if (!entry || entry.expiresAt <= now || (sessionId !== undefined && entry.sessionId !== sessionId)) {
     stepUpTokens.delete(token);
     return false;
   }
