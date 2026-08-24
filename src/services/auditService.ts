@@ -1,3 +1,5 @@
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+
 export type AuditOutcome = 'started' | 'completed' | 'blocked' | 'failed';
 
 export interface AuditRecord {
@@ -11,6 +13,25 @@ export interface AuditRecord {
 }
 
 const records: AuditRecord[] = [];
+const auditStorePath = process.env.KC_AI_AUDIT_STORE_PATH || '.kc-ai-audit.json';
+
+function persistRecords(): void {
+  const temporaryPath = `${auditStorePath}.${process.pid}.tmp`;
+  const directory = auditStorePath.includes('/') ? auditStorePath.slice(0, auditStorePath.lastIndexOf('/')) : '.';
+  mkdirSync(directory, { recursive: true, mode: 0o700 });
+  writeFileSync(temporaryPath, JSON.stringify(records), { mode: 0o600 });
+  renameSync(temporaryPath, auditStorePath);
+}
+
+function loadRecords(): void {
+  if (!existsSync(auditStorePath)) return;
+  try {
+    const storedRecords = JSON.parse(readFileSync(auditStorePath, 'utf8')) as AuditRecord[];
+    records.push(...storedRecords);
+  } catch {}
+}
+
+loadRecords();
 
 function safeError(error?: string): string | undefined {
   if (!error) return undefined;
@@ -20,6 +41,7 @@ function safeError(error?: string): string | undefined {
 export function recordAudit(input: Omit<AuditRecord, 'timestamp' | 'error'> & { error?: string }): AuditRecord {
   const record: AuditRecord = { ...input, timestamp: new Date().toISOString(), error: safeError(input.error) };
   records.push(record);
+  persistRecords();
   return { ...record };
 }
 
@@ -29,4 +51,10 @@ export function listAuditRecords(): AuditRecord[] {
 
 export function clearAuditRecords(): void {
   records.length = 0;
+  persistRecords();
+}
+
+export function reloadAuditRecords(): void {
+  records.length = 0;
+  loadRecords();
 }

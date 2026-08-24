@@ -7,7 +7,7 @@ import { getTask, reloadTasks } from '../services/taskService';
 import { SecretBus } from '../services/secretBusService';
 import { verifyOwnerToken } from '../services/ownerModeService';
 import { authenticateOwner, hashPassword, issueStepUpToken, logoutOwner, verifyOwnerSession, verifyStepUpToken, verifyStepUpTokenForSession } from '../services/authService';
-import { clearAuditRecords, listAuditRecords, recordAudit } from '../services/auditService';
+import { clearAuditRecords, listAuditRecords, recordAudit, reloadAuditRecords } from '../services/auditService';
 import { createHmac } from 'node:crypto';
 import { readFileSync, unlinkSync } from 'node:fs';
 import { advancePrivateBuild, createPrivateBuild, getPrivateBuild } from '../services/privateBuildService';
@@ -98,6 +98,13 @@ describe('KC AI foundation', () => {
     recordAudit({ actionType: 'test', actorRole: 'owner', outcome: 'failed', verificationStatus: 'not-verified', error: 'token=do-not-log password=also-private' });
     const audit = listAuditRecords();
     expect(audit[0].error).toBe('token=[REDACTED] password=[REDACTED]');
+  });
+
+  it('reloads audit records from the atomic local store', () => {
+    clearAuditRecords();
+    const created = recordAudit({ actionType: 'persisted-test', actorRole: 'system', outcome: 'completed', verificationStatus: 'verified' });
+    reloadAuditRecords();
+    expect(listAuditRecords()).toContainEqual(created);
   });
 
   it('reloads task state from the atomic local store', () => {
