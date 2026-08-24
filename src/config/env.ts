@@ -10,6 +10,10 @@ const envSchema = z.object({
   KC_AI_ALLOWED_ORIGINS: z.string().default('http://localhost:3000'),
   KC_AI_JWT_SECRET: z.string().min(16).default('development-secret-change-me'),
   KC_AI_SECRET_BUS_KEY: z.string().min(32).optional(),
+  KC_AI_SECRET_BUS_PATH: z.string().default('.kc-ai-secrets.json'),
+  KC_AI_OWNER_ID: z.string().min(1).default('owner'),
+  KC_AI_OWNER_PASSWORD_HASH: z.string().optional(),
+  KC_AI_OWNER_BOOTSTRAP_PASSWORD: z.string().optional(),
   KC_AI_TASK_STORE_PATH: z.string().default('.kc-ai-tasks.json'),
   KC_AI_TTS_PROVIDER: z.enum(['browser', 'azure', 'google']).default('browser'),
   KC_AI_TTS_VOICE: z.string().default('en-US-JennyNeural'),
@@ -19,8 +23,8 @@ const envSchema = z.object({
 
 export const env = envSchema.parse(process.env);
 
-if (env.KC_AI_ENV === 'production' && env.KC_AI_JWT_SECRET === 'development-secret-change-me') {
-  throw new Error('KC_AI_JWT_SECRET must be configured in production');
+if (env.KC_AI_ENV === 'production' && (env.KC_AI_JWT_SECRET === 'development-secret-change-me' || !env.KC_AI_OWNER_PASSWORD_HASH || env.KC_AI_OWNER_BOOTSTRAP_PASSWORD)) {
+  throw new Error('Production requires KC_AI_JWT_SECRET and KC_AI_OWNER_PASSWORD_HASH; bootstrap passwords are disabled');
 }
 
 export const allowedOrigins = env.KC_AI_ALLOWED_ORIGINS.split(',').map((origin) => origin.trim()).filter(Boolean);

@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { checkCapability } from './capabilityService';
 import { recordAudit } from './auditService';
 import type { TaskRecord } from '../types/task';
@@ -15,7 +15,20 @@ if (existsSync(taskStorePath)) {
 }
 
 function persistTasks(): void {
-  writeFileSync(taskStorePath, JSON.stringify([...tasks.values()]), { mode: 0o600 });
+  const temporaryPath = `${taskStorePath}.${process.pid}.tmp`;
+  const directory = taskStorePath.includes('/') ? taskStorePath.slice(0, taskStorePath.lastIndexOf('/')) : '.';
+  mkdirSync(directory, { recursive: true, mode: 0o700 });
+  writeFileSync(temporaryPath, JSON.stringify([...tasks.values()]), { mode: 0o600 });
+  renameSync(temporaryPath, taskStorePath);
+}
+
+export function reloadTasks(): void {
+  tasks.clear();
+  if (!existsSync(taskStorePath)) return;
+  try {
+    const storedTasks = JSON.parse(readFileSync(taskStorePath, 'utf8')) as TaskRecord[];
+    for (const task of storedTasks) tasks.set(task.taskId, task);
+  } catch {}
 }
 
 function inferCapability(goal: string): string {
@@ -41,6 +54,7 @@ export function createAndAdvanceTask(input: {
     createdAt: now,
     updatedAt: now,
     progress: ['Goal received.'],
+    lastSuccessfulStep: 'Goal received.',
     verificationStatus: 'not-verified',
   };
   tasks.set(task.taskId, task);
@@ -49,6 +63,7 @@ export function createAndAdvanceTask(input: {
 
   task.status = 'planning';
   task.progress.push('Planning required capability.');
+  task.lastSuccessfulStep = 'Goal received.';
   task.requiredCapability = inferCapability(task.goal);
   const capability = checkCapability(task.requiredCapability);
 
@@ -56,6 +71,7 @@ export function createAndAdvanceTask(input: {
     task.status = 'blocked';
     task.blockedReason = capability.reason || `Capability status: ${capability.status}`;
     task.progress.push(`Blocked: ${task.blockedReason}.`);
+    task.lastError = task.blockedReason;
     task.updatedAt = new Date().toISOString();
     persistTasks();
     recordAudit({ actionType: 'task.blocked', taskId: task.taskId, actorRole: input.actorRole || 'user', outcome: 'blocked', verificationStatus: 'not-verified', error: task.blockedReason });
@@ -64,9 +80,11 @@ export function createAndAdvanceTask(input: {
 
   task.status = 'validating';
   task.progress.push('Available orchestration capability validated.');
+  task.lastSuccessfulStep = 'Available orchestration capability validated.';
   task.status = 'completed';
   task.verificationStatus = 'verified';
   task.progress.push('Task completed: no external side effect was requested.');
+  task.lastSuccessfulStep = 'Task completed: no external side effect was requested.';
   task.updatedAt = new Date().toISOString();
   persistTasks();
   recordAudit({ actionType: 'task.completed', taskId: task.taskId, actorRole: input.actorRole || 'user', outcome: 'completed', verificationStatus: 'verified' });
@@ -76,4 +94,8 @@ export function createAndAdvanceTask(input: {
 export function getTask(taskId: string): TaskRecord | undefined {
   const task = tasks.get(taskId);
   return task ? { ...task, progress: [...task.progress] } : undefined;
+}
+
+export function listTasks(): TaskRecord[] {
+  return [...tasks.values()].map((task) => ({ ...task, progress: [...task.progress] }));
 }

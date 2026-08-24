@@ -26,3 +26,7 @@ export function recordAudit(input: Omit<AuditRecord, 'timestamp' | 'error'> & { 
 export function listAuditRecords(): AuditRecord[] {
   return records.map((record) => ({ ...record }));
 }
+
+export function clearAuditRecords(): void {
+  records.length = 0;
+}

@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>KC AI | Owner Console</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/"><span class="brand-mark">KC</span><span><strong>KC AI</strong><small>Central intelligence for the KC ecosystem</small></span></a>
+    <div id="session-area"><button class="button button-outline" data-view="signin">Owner sign-in</button></div>
+  </header>
+  <main class="shell">
+    <section class="hero" data-view-panel="home">
+      <div><p class="eyebrow">KC AI / OWNER CONSOLE</p><h1>Work with clarity.<br><span>Verify every outcome.</span></h1><p class="hero-copy">A central assistant for KC Earn, KC TELECOM, KC Messaging Africa, KC Business Suite, and the products ahead.</p></div>
+      <div class="hero-status"><span class="pulse"></span><span id="service-status">Checking service</span><small id="service-detail">Capability truth is always on.</small></div>
+    </section>
+    <nav class="tabs" aria-label="KC AI sections"><button class="tab active" data-view="home">Chat</button><button class="tab" data-view="tasks">Tasks</button><button class="tab" data-view="capabilities">Capabilities</button><button class="tab owner-only" data-view="secrets">Secret Bus</button><button class="tab" data-view="settings">Settings</button></nav>
+    <section class="view active" id="view-home"><div class="chat-layout"><div class="panel chat-panel"><div class="panel-heading"><div><p class="eyebrow">CONTEXT-AWARE ASSISTANT</p><h2>What are you working toward?</h2></div><span class="context-chip">KC ecosystem</span></div><div id="chat-log" class="chat-log"><div class="message assistant"><strong>KC AI</strong><p>I can guide you here and execute only capabilities that are available and verified in this environment.</p></div></div><form id="chat-form" class="chat-form"><input id="chat-input" autocomplete="off" placeholder="Ask for guidance or describe a goal..." maxlength="4000"><button class="button button-primary" type="submit">Send</button></form></div><aside class="panel context-panel"><p class="eyebrow">CURRENT CONTEXT</p><h3>KC AI Core</h3><p>Reusable across every connected KC product. No product data integration is configured yet.</p><div class="mini-rule"></div><p class="eyebrow">SAFE BY DEFAULT</p><p>External actions stay blocked until the required capability, authorization, and verification evidence exist.</p></aside></div></section>
+    <section class="view" id="view-signin"><div class="narrow panel auth-panel"><p class="eyebrow">OWNER MODE</p><h2>Sign in securely</h2><p>Owner access uses an expiring session. A name or chat statement never grants Owner Mode.</p><form id="login-form"><label>Owner ID<input id="owner-id" required autocomplete="username" value="owner"></label><label>Password<input id="owner-password" required type="password" autocomplete="current-password"></label><button class="button button-primary" type="submit">Sign in</button><p class="form-error" id="login-error"></p></form></div></section>
+    <section class="view" id="view-tasks"><div class="section-heading"><div><p class="eyebrow">AUTONOMOUS WORK</p><h2>Task history</h2></div><form id="task-form" class="inline-form"><input id="task-goal" required placeholder="Describe a goal"><button class="button button-primary">Start task</button></form></div><div id="task-list" class="list"></div></section>
+    <section class="view" id="view-capabilities"><div class="section-heading"><div><p class="eyebrow">CAPABILITY TRUTH CONTRACT</p><h2>What KC AI can actually do</h2></div><button class="button button-outline" id="refresh-capabilities">Refresh</button></div><div id="capability-list" class="capability-grid"></div></section>
+    <section class="view" id="view-secrets"><div class="section-heading"><div><p class="eyebrow">OWNER-ONLY VAULT</p><h2>KC Secret Bus</h2><p class="section-copy">Encrypted local development storage. Values are masked until step-up re-authentication.</p></div><button class="button button-primary" id="new-secret">Add record</button></div><div id="secret-list" class="list"></div><div id="secret-form-wrap" class="panel form-panel hidden"><form id="secret-form"><label>Type<select id="secret-type"><option value="password">Password</option><option value="api-key">API key</option><option value="token">Token</option><option value="private-note">Private note</option><option value="project-secret">Project secret</option><option value="document">Private document</option></select></label><label>Label<input id="secret-label" required></label><label>Value<textarea id="secret-value" required></textarea></label><button class="button button-primary">Encrypt and save</button><button class="button button-outline" type="button" id="cancel-secret">Cancel</button><p class="form-error" id="secret-error"></p></form></div></section>
+    <section class="view" id="view-settings"><div class="panel settings-panel"><p class="eyebrow">SESSION</p><h2>Settings and boundaries</h2><div id="settings-content"><p>Owner sign-in is required for session details.</p></div></div></section>
+  </main>
+  <footer><span>KC AI</span><span>Truthful execution. Explicit context. Owner-controlled access.</span></footer>
+  <script src="/app.js"></script>
+</body>
+</html>

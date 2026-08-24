@@ -27,6 +27,8 @@ export interface TaskRecord {
   createdAt: string;
   updatedAt: string;
   progress: string[];
+  lastSuccessfulStep?: string;
+  lastError?: string;
   requiredCapability?: string;
   blockedReason?: string;
   verificationStatus: 'not-verified' | 'verified';

@@ -1,4 +1,5 @@
-import express, { type Request, type Response } from 'express';
+import express, { type NextFunction, type Request, type Response } from 'express';
+import path from 'node:path';
 import { env, allowedOrigins } from './config/env';
 import { createHealthResponse } from './services/healthService';
 import { createWelcomeMessage } from './services/welcomeService';
@@ -6,22 +7,44 @@ import { createSessionRecord } from './services/sessionService';
 import { generateChatReply, ChatRequestSchema } from './services/chatService';
 import { createTtsResponse } from './services/ttsService';
 import { listCapabilities } from './services/capabilityService';
-import { createAndAdvanceTask, getTask } from './services/taskService';
+import { createAndAdvanceTask, getTask, listTasks } from './services/taskService';
 import { listAuditRecords } from './services/auditService';
-import { verifyOwnerToken } from './services/ownerModeService';
-import { SecretBus } from './services/secretBusService';
+import { authenticateOwner, authConfigurationStatus, issueStepUpToken, logoutOwner, verifyOwnerSession, verifyStepUpToken } from './services/authService';
+import { SecretBus, type SecretType } from './services/secretBusService';
 
 const app = express();
 const port = env.KC_AI_PORT;
 const secretBus = new SecretBus(env.KC_AI_SECRET_BUS_KEY);
 
-function ownerClaims(req: Request) {
+function bearerToken(req: Request): string | undefined {
   const authorization = req.headers.authorization;
-  const token = authorization?.startsWith('Bearer ') ? authorization.slice(7) : undefined;
-  return verifyOwnerToken(token, env.KC_AI_JWT_SECRET);
+  return authorization?.startsWith('Bearer ') ? authorization.slice(7) : undefined;
+}
+
+function ownerClaims(req: Request) {
+  return verifyOwnerSession(bearerToken(req), env.KC_AI_JWT_SECRET);
+}
+
+function requireOwner(req: Request, res: Response, next: NextFunction): void {
+  const claims = ownerClaims(req);
+  if (!claims) {
+    res.status(401).json({ error: 'Authenticated Owner Mode is required' });
+    return;
+  }
+  res.locals.owner = claims;
+  next();
+}
+
+function requireStepUp(req: Request, res: Response, next: NextFunction): void {
+  if (!verifyStepUpToken(req.headers['x-kc-step-up'] as string | undefined)) {
+    res.status(403).json({ error: 'Recent owner re-authentication is required', requiredAction: 'POST /api/v1/auth/reauthenticate' });
+    return;
+  }
+  next();
 }
 
 app.use(express.json());
+app.use(express.static(path.join(process.cwd(), 'public')));
 
 app.use((req, res, next) => {
   const origin = req.headers.origin;
@@ -96,6 +119,32 @@ app.post('/api/v1/tts', (req: Request, res: Response) => {
   res.json(response);
 });
 
+app.post('/api/v1/auth/login', (req: Request, res: Response) => {
+  const ownerId = typeof req.body?.ownerId === 'string' ? req.body.ownerId : '';
+  const password = typeof req.body?.password === 'string' ? req.body.password : '';
+  const result = authenticateOwner({ ownerId, password, secret: env.KC_AI_JWT_SECRET });
+  if (!result) {
+    res.status(401).json({ error: 'Invalid owner credentials or authentication is not configured' });
+    return;
+  }
+  res.json(result);
+});
+
+app.post('/api/v1/auth/logout', requireOwner, (req: Request, res: Response) => {
+  logoutOwner(bearerToken(req), env.KC_AI_JWT_SECRET);
+  res.status(204).send();
+});
+
+app.post('/api/v1/auth/reauthenticate', requireOwner, (req: Request, res: Response) => {
+  const password = typeof req.body?.password === 'string' ? req.body.password : '';
+  const token = issueStepUpToken({ token: bearerToken(req), password, secret: env.KC_AI_JWT_SECRET });
+  if (!token) {
+    res.status(401).json({ error: 'Owner re-authentication failed' });
+    return;
+  }
+  res.json({ stepUpToken: token, expiresInSeconds: 300 });
+});
+
 app.get('/api/v1/capabilities', (_req: Request, res: Response) => {
   res.json({ capabilities: listCapabilities() });
 });
@@ -125,20 +174,59 @@ app.get('/api/v1/tasks/:taskId', (req: Request, res: Response) => {
   res.json({ task });
 });
 
-app.get('/api/v1/owner/audit', (req: Request, res: Response) => {
-  if (!ownerClaims(req)) {
-    res.status(401).json({ error: 'Authenticated Owner Mode is required' });
-    return;
-  }
+app.get('/api/v1/tasks', (_req: Request, res: Response) => {
+  res.json({ tasks: listTasks() });
+});
+
+app.get('/api/v1/owner/audit', requireOwner, (_req: Request, res: Response) => {
   res.json({ records: listAuditRecords() });
 });
 
-app.get('/api/v1/owner/secret-bus/status', (req: Request, res: Response) => {
-  if (!ownerClaims(req)) {
-    res.status(401).json({ error: 'Authenticated Owner Mode is required' });
-    return;
-  }
+app.get('/api/v1/owner/secret-bus/status', requireOwner, (_req: Request, res: Response) => {
   res.json({ status: secretBus.status() });
+});
+
+app.get('/api/v1/owner/secrets', requireOwner, (req: Request, res: Response) => {
+  res.json({ records: secretBus.list(res.locals.owner.subject) });
+});
+
+app.get('/api/v1/owner/secrets/:id', requireOwner, (req: Request, res: Response) => {
+  const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const record = secretBus.get(res.locals.owner.subject, id);
+  if (!record) { res.status(404).json({ error: 'Secret record not found' }); return; }
+  res.json({ record });
+});
+
+app.post('/api/v1/owner/secrets', requireOwner, (req: Request, res: Response) => {
+  if (typeof req.body?.label !== 'string' || typeof req.body?.value !== 'string' || typeof req.body?.type !== 'string') { res.status(400).json({ error: 'type, label, and value are required' }); return; }
+  try {
+    const record = secretBus.create({ ownerId: res.locals.owner.subject, type: req.body.type as SecretType, label: req.body.label, value: req.body.value, tags: req.body.tags, projectReference: req.body.projectReference });
+    res.status(201).json({ record });
+  } catch { res.status(503).json({ error: 'KC Secret Bus is unavailable; configure its encryption key' }); }
+});
+
+app.post('/api/v1/owner/secrets/:id/reveal', requireOwner, requireStepUp, (req: Request, res: Response) => {
+  const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  try {
+    const value = secretBus.reveal(res.locals.owner.subject, id);
+    if (value === undefined) { res.status(404).json({ error: 'Secret record not found' }); return; }
+    res.json({ value });
+  } catch { res.status(503).json({ error: 'KC Secret Bus is unavailable' }); }
+});
+
+app.patch('/api/v1/owner/secrets/:id', requireOwner, (req: Request, res: Response) => {
+  const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  try {
+    const record = secretBus.update(res.locals.owner.subject, id, { label: req.body?.label, value: req.body?.value, tags: req.body?.tags, projectReference: req.body?.projectReference });
+    if (!record) { res.status(404).json({ error: 'Secret record not found' }); return; }
+    res.json({ record });
+  } catch { res.status(503).json({ error: 'KC Secret Bus is unavailable' }); }
+});
+
+app.delete('/api/v1/owner/secrets/:id', requireOwner, requireStepUp, (req: Request, res: Response) => {
+  const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  if (!secretBus.delete(res.locals.owner.subject, id)) { res.status(404).json({ error: 'Secret record not found' }); return; }
+  res.status(204).send();
 });
 
 app.get('/api/v1/info', (_req: Request, res: Response) => {
@@ -150,9 +238,10 @@ app.get('/api/v1/info', (_req: Request, res: Response) => {
     voiceEnabled: env.KC_AI_ENABLE_VOICE,
     ttsProvider: env.KC_AI_TTS_PROVIDER,
     capabilities: listCapabilities(),
+    ownerAuthentication: authConfigurationStatus(),
   });
 });
 
-app.listen(port, () => {
-  console.log(`KC AI service listening on port ${port}`);
-});
+if (require.main === module) app.listen(port, () => console.log(`KC AI service listening on port ${port}`));
+
+export default app;
