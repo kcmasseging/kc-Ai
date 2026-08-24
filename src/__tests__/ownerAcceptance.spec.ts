@@ -89,4 +89,11 @@ describe('KC AI owner acceptance', () => {
     expect(initializeOwner({ setupSecret: 'i'.repeat(32), passwordHash: hashPassword('new owner password') })).toBe(false);
     expect(authConfigurationStatus()).toMatchObject({ configured: true, initializationAvailable: false, mode: 'environment-hash' });
   });
+
+  it('keeps the owner password hash out of the Railway build command', () => {
+    const railwayConfig = readFileSync('railway.toml', 'utf8');
+    expect(railwayConfig).toContain('buildCommand = "npm run build"');
+    expect(railwayConfig).toContain('startCommand = "npm start"');
+    expect(railwayConfig).not.toContain('KC_AI_OWNER_PASSWORD_HASH');
+  });
 });

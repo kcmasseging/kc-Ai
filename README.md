@@ -64,6 +64,8 @@ Required variables include:
 
 The project intentionally does not include real secrets or external credentials.
 
+Railway uses the checked-in `railway.toml` to build with `npm run build` and start with `npm start`. Owner authentication variables, including `KC_AI_OWNER_PASSWORD_HASH`, are runtime service variables only; they must not be added as Railway Build Variables or referenced as build secrets.
+
 For the one-time production owner bootstrap, create `KC_AI_OWNER_INITIALIZATION_SECRET` as a 32-character-or-longer random value in the Railway Variables screen using a password manager's random-secret generator. Open the deployed Owner Console, choose `Initialize Owner`, and enter that secret plus the owner password. The password is hashed in the browser and is never sent to the service. Copy the resulting hash to `KC_AI_OWNER_PASSWORD_HASH`, remove `KC_AI_OWNER_INITIALIZATION_SECRET`, and redeploy. Initialization is unavailable whenever an owner hash exists and is disabled after a successful initialization in the running process.
 
 ## Local development
