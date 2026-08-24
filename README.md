@@ -71,7 +71,41 @@ npm run dev
 
 ## Current status
 
-This repository contains the reusable KC AI foundation. It does not claim any live connection to KC TELECOM, KC Earn, KC Messaging Africa, KC Business Suite, or other external KC applications until those application integrations are implemented and configured.
+This repository contains the first usable autonomous KC AI foundation. It does not claim any live connection to KC TELECOM, KC Earn, KC Messaging Africa, KC Business Suite, or other external KC applications until those application integrations are implemented and configured.
+
+## IMPLEMENTED NOW
+
+- Explicit application context remains part of welcome, chat, and task records, allowing the same assistant to serve KC Earn, KC TELECOM, KC Messaging Africa, KC Business Suite, and future products.
+- `POST /api/v1/tasks` creates a task and advances it automatically through received, planning, and validation. Unsupported external work becomes `blocked` with a truthful reason; it is never reported as completed.
+- `GET /api/v1/tasks/:taskId` reads task progress. Non-secret task records persist to the local path in `KC_AI_TASK_STORE_PATH` with restrictive file permissions. This is single-process development storage.
+- `GET /api/v1/capabilities` exposes the Capability Truth Contract. Each capability is `available`, `planned`, or blocked by a specific requirement such as credentials or an external integration.
+- Owner Mode verifies a signed, expiring owner claim supplied as `Authorization: Bearer <token>`. A typed name or chat statement never grants owner privileges. The audit and Secret Bus status endpoints are owner-only.
+- Important task actions create structured in-memory audit records with actor role, outcome, verification status, and redacted error text.
+- KC Secret Bus uses AES-256-GCM authenticated encryption in memory and requires `KC_AI_SECRET_BUS_KEY`. It never returns values through chat, logs, audit records, or status responses. Without that key it reports unavailable rather than pretending secure storage exists.
+- Temporary local task storage is marked by its filename and ignored by Git. No real credentials or vault contents belong in this repository.
+
+## PLANNED / REQUIRES INFRASTRUCTURE
+
+- Durable highly available task and audit storage requires a production database and retention policy.
+- KC Secret Bus production use requires a managed key-management system, owner re-authentication/recovery policy, encrypted durable storage, rotation, backup, and access monitoring. The current memory implementation is only an inspectable foundation.
+- Product data changes, deployment, email, payments, and other external side effects require registered integrations, scoped authorization, credentials, and verification adapters. They are currently unavailable or planned.
+- Owner token issuance and identity lifecycle must be provided by a trusted KC identity service. This repository only verifies signed claims and does not issue owner credentials.
+
+## Autonomous task lifecycle
+
+Tasks are `received -> planning -> executing -> validating -> completed`. A missing capability, authorization, credential, payment, or external human interaction moves the task to `blocked`; an execution error moves it to `failed`. KC AI continues ordinary recoverable orchestration automatically and asks the owner only for the specific missing authorization, information, secret, payment, human interaction, or high-impact confirmation.
+
+## Capability Truth Contract
+
+KC AI checks the registry before promising an action. It may say an action is complete only after the action occurs and its verification adapter provides evidence. A blocked or unimplemented capability is described as blocked or unavailable, never as done, deployed, pushed, paid, sent, updated, or production-verified.
+
+## KC Secret Bus security
+
+The vault accepts key material only from `KC_AI_SECRET_BUS_KEY`; it is never hard-coded. Values are encrypted with AES-256-GCM using a random nonce and authenticated tag. Ordinary users cannot access the vault endpoints, and the current API exposes only owner-authenticated availability status. Secret reveal/write workflows are intentionally not exposed over ordinary chat and require a future stronger re-authentication design.
+
+## Audit and verification
+
+Audit entries contain action type, timestamp, task ID, actor role, outcome, verification state, and safe errors. Secret-like values are redacted before storage. The service does not fabricate tool, deployment, payment, or production verification results. The `verified` state is used only for the local orchestration task that has no external side effect.
 
 ## Integration guidance for KC applications
 

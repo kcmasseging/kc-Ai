@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { createHealthResponse } from '../services/healthService';
 import { createWelcomeMessage } from '../services/welcomeService';
+import { checkCapability } from '../services/capabilityService';
+import { createAndAdvanceTask } from '../services/taskService';
+import { SecretBus } from '../services/secretBusService';
+import { verifyOwnerToken } from '../services/ownerModeService';
+import { createHmac } from 'node:crypto';
 
 describe('KC AI foundation', () => {
   it('creates a health response with status and service metadata', () => {
@@ -32,5 +37,34 @@ describe('KC AI foundation', () => {
     expect(welcome.permissionsHint).not.toContain('Disable KC AI Voice');
     expect(welcome.permissionsHint).not.toContain('Never play again');
     expect(welcome.voiceControls).toBe('normal KC AI conversation voice controls remain separate from mandatory login/signup introduction');
+  });
+
+  it('blocks unsupported external work instead of claiming success', () => {
+    expect(checkCapability('deployment').status).toBe('planned');
+
+    const task = createAndAdvanceTask({ goal: 'deploy this to production', appId: 'kc-telecom' });
+
+    expect(task.status).toBe('blocked');
+    expect(task.verificationStatus).toBe('not-verified');
+    expect(task.blockedReason).toContain('deployment integration');
+  });
+
+  it('encrypts Secret Bus values and reports missing key material', () => {
+    const unavailable = new SecretBus();
+    expect(unavailable.status().available).toBe(false);
+
+    const bus = new SecretBus('a'.repeat(32));
+    bus.set('example', 'test-only-value');
+    expect(bus.has('example')).toBe(true);
+    expect(bus.reveal('example')).toBe('test-only-value');
+  });
+
+  it('accepts only signed, unexpired Owner Mode claims', () => {
+    const secret = 'owner-auth-test-secret';
+    const claims = Buffer.from(JSON.stringify({ subject: 'owner-1', role: 'owner', expiresAt: Date.now() + 60_000 })).toString('base64url');
+    const signature = createHmac('sha256', secret).update(claims).digest('base64url');
+
+    expect(verifyOwnerToken(`${claims}.${signature}`, secret)).toMatchObject({ subject: 'owner-1', role: 'owner' });
+    expect(verifyOwnerToken(`${claims}.invalid`, secret)).toBeUndefined();
   });
 });

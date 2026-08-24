@@ -44,7 +44,7 @@ export function generateChatReply(input: ChatRequest): ChatResponse {
 
   if (normalized.includes('telecom')) {
     return {
-      reply: 'KC AI can help you with telecom account support, service updates, and product guidance within the broader KC ecosystem context.',
+      reply: 'KC AI can provide telecom account guidance and product information in context. No KC TELECOM data integration is currently configured, so I cannot claim to read or change an account.',
       appContext,
       sessionId: input.sessionId,
     };
@@ -52,14 +52,14 @@ export function generateChatReply(input: ChatRequest): ChatResponse {
 
   if (normalized.includes('earn') || normalized.includes('wallet')) {
     return {
-      reply: 'KC AI can support KC Earn workflows, insights, and account guidance while keeping the app context in view.',
+      reply: 'KC AI can provide KC Earn workflow guidance and insights in context. No KC Earn data integration is currently configured, so I cannot claim to read or change wallet data.',
       appContext,
       sessionId: input.sessionId,
     };
   }
 
   return {
-    reply: 'I am KC AI, designed as a central assistant for the KC ecosystem. Tell me which KC product or service you are using so I can tailor my guidance and context securely.',
+    reply: 'I am KC AI, the central assistant for the KC ecosystem. I can provide guidance and execute only capabilities currently registered and available in this environment.',
     appContext,
     sessionId: input.sessionId,
   };
