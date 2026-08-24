@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { recordAudit } from './auditService';
 import { InsufficientBalanceError, getStorage } from './storage';
-import { supportedCurrencies, type WalletCurrency, type WalletEntryDirection, type WalletLedgerEntry, type WalletRail, type WalletTransaction, type WalletAccount } from '../types/wallet';
+import { supportedCurrencies, type WalletCurrency, type WalletEntryDirection, type WalletLedgerEntry, type WalletRail, type WalletRoute, type WalletRouteRequest, type WalletTransaction, type WalletAccount } from '../types/wallet';
 import { unconfiguredWalletProviders } from './walletProviders';
 
 export class WalletOperationError extends Error {}
@@ -56,7 +56,20 @@ export async function reverseOwnerWalletTransaction(input: { ownerId: string; tr
   return result;
 }
 
-export function listWalletRails(): WalletRail[] { return unconfiguredWalletProviders.rails.map((rail) => ({ ...rail })); }
+export function listWalletRails(): WalletRail[] { return unconfiguredWalletProviders.rails.map((rail) => ({ ...rail, complianceRequirements: [...rail.complianceRequirements] })); }
+
+export function resolveWalletRoute(request: WalletRouteRequest): WalletRoute {
+  const rail = unconfiguredWalletProviders.rails.find((entry) => entry.country === request.country && entry.currency === request.currency && entry.rail === request.rail) || {
+    priority: 3 as const,
+    country: request.country,
+    currency: request.currency,
+    rail: request.rail,
+    status: 'NOT_CONFIGURED' as const,
+    reason: 'Country, currency, or payout rail is not configured',
+    complianceRequirements: [],
+  };
+  return { request: { ...request }, rail: { ...rail, complianceRequirements: [...rail.complianceRequirements] }, available: false, reason: rail.reason };
+}
 
 export function deriveWalletBalances(ledger: WalletLedgerEntry[]): Record<string, string> {
   const balances: Record<string, bigint> = {};

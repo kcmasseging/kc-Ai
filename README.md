@@ -110,11 +110,17 @@ The companion roadmap is:
 
 Until these stages are separately implemented and tested, phone access remains unavailable and no phone data is read.
 
-## Future owner-only wallet roadmap
+## Future owner-only live wallet roadmap
 
 The future multi-country, multi-currency wallet remains an owner-only private capability. Adding screens, records, or task states must never enable real-money functionality. Each country, currency, and payment rail must remain `planned` or blocked until its legitimate provider integration, credentials, compliance requirements, transaction verification, reconciliation, fraud controls, and security review are configured and tested.
 
 Wallet development must proceed through private development, validation, owner review, staging verification, and explicit owner approval. Approval does not deploy, publish, activate production, fund, withdraw, or execute a transaction. A public wallet product requires separate explicit authorization and a new security and compliance review.
+
+## Asia-Pacific wallet readiness
+
+The private foundation is prepared for `NGN`, `PHP`, `IDR`, `PGK`, `CNY`, `PKR`, `MYR`, `SGD`, `THB`, `VND`, `INR`, `BDT`, `JPY`, and `KRW`, with an extensible currency type for future additions. Priority routing is Philippines and Indonesia first, followed by Papua New Guinea, China, Pakistan, Malaysia, Singapore, Thailand, Vietnam, India, and Bangladesh; Japan, South Korea, Sri Lanka, Nepal, Cambodia, Laos, Myanmar, Brunei, and Timor-Leste are future expansion.
+
+Every listed route is currently `NOT_CONFIGURED`. No real provider has been selected for Philippines, Indonesia, or Papua New Guinea. Each of those countries still requires a legitimate licensed bank-transfer, remittance, payout, or approved wallet provider; provider-side beneficiary verification; an authoritative FX source; fee and settlement data; signed webhook and status verification; server-side credentials; applicable KYC/AML, sanctions, licensing, and data-protection review; reconciliation; and tested operational recovery. The repository intentionally does not name or imply support for a provider that has not been connected and verified.
 
 ## Autonomous task lifecycle
 

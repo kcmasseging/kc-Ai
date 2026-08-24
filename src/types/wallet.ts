@@ -1,9 +1,9 @@
-export const supportedCurrencies = ['NGN', 'PHP', 'IDR', 'CNY', 'PKR'] as const;
+export const supportedCurrencies = ['NGN', 'PHP', 'IDR', 'PGK', 'CNY', 'PKR', 'MYR', 'SGD', 'THB', 'VND', 'INR', 'BDT', 'JPY', 'KRW'] as const;
 export type WalletCurrency = typeof supportedCurrencies[number] | (string & {});
 
-export type WalletTransactionStatus = 'PENDING' | 'UNVERIFIED' | 'FAILED' | 'REVERSED' | 'CANCELLED';
+export type WalletTransactionStatus = 'PENDING' | 'PROCESSING' | 'CONFIRMED' | 'UNVERIFIED' | 'FAILED' | 'REVERSED' | 'CANCELLED';
 export type WalletEntryDirection = 'CREDIT' | 'DEBIT';
-export type WalletRailStatus = 'NOT_CONFIGURED' | 'CONFIGURED' | 'TESTING' | 'VERIFIED' | 'LIVE' | 'DISABLED';
+export type WalletRailStatus = 'NOT_CONFIGURED' | 'PROVIDER_RESEARCH_REQUIRED' | 'PROVIDER_SELECTED' | 'CREDENTIALS_REQUIRED' | 'COMPLIANCE_REQUIRED' | 'CONFIGURED' | 'TESTING' | 'VERIFIED' | 'LIVE' | 'DISABLED';
 
 export interface WalletAccount {
   walletId: string;
@@ -47,10 +47,30 @@ export interface WalletState {
 }
 
 export interface WalletRail {
+  priority: 1 | 2 | 3;
   country: string;
   currency: WalletCurrency;
   rail: string;
   status: WalletRailStatus;
+  reason: string;
+  provider?: string;
+  fxSource?: string;
+  estimatedFees?: string;
+  expectedSettlementStatus?: WalletTransactionStatus;
+  complianceRequirements: string[];
+}
+
+export interface WalletRouteRequest {
+  country: string;
+  currency: WalletCurrency;
+  rail: string;
+  amountMinor: string;
+}
+
+export interface WalletRoute {
+  request: WalletRouteRequest;
+  rail: WalletRail;
+  available: false;
   reason: string;
 }
 

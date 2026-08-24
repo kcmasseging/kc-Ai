@@ -11,7 +11,7 @@ import { createAndAdvanceTask, getTask, listTaskHistory, listTasks } from './ser
 import { listAuditRecords } from './services/auditService';
 import { initializeStorage, LocalStorage, configureStorage } from './services/storage';
 import { PostgresStorage } from './services/postgresStorage';
-import { createOwnerWallet, deriveWalletBalances, getOwnerWallet, listWalletRails, mutateOwnerWallet, reverseOwnerWalletTransaction, WalletOperationError } from './services/walletService';
+import { createOwnerWallet, deriveWalletBalances, getOwnerWallet, listWalletRails, mutateOwnerWallet, resolveWalletRoute, reverseOwnerWalletTransaction, WalletOperationError } from './services/walletService';
 import { authenticateOwner, authConfigurationStatus, issueStepUpToken, logoutOwner, verifyOwnerSession, verifyStepUpTokenForSession } from './services/authService';
 import { SecretBus, type SecretType } from './services/secretBusService';
 import { advancePrivateBuild, createPrivateBuild, getPrivateBuild, type PrivateBuildStatus } from './services/privateBuildService';
@@ -219,6 +219,11 @@ app.get('/api/v1/owner/private-build/:privateBuildId/wallet', requireOwner, requ
 
 app.get('/api/v1/owner/private-build/:privateBuildId/wallet/rails', requireOwner, requirePrivateBuild, (_req: Request, res: Response) => {
   res.json({ rails: listWalletRails() });
+});
+
+app.post('/api/v1/owner/private-build/:privateBuildId/wallet/route', requireOwner, requirePrivateBuild, (req: Request, res: Response) => {
+  if (typeof req.body?.country !== 'string' || typeof req.body?.currency !== 'string' || typeof req.body?.rail !== 'string' || typeof req.body?.amountMinor !== 'string') { res.status(400).json({ error: 'country, currency, rail, and amountMinor are required' }); return; }
+  res.status(200).json({ route: resolveWalletRoute({ country: req.body.country, currency: req.body.currency, rail: req.body.rail, amountMinor: req.body.amountMinor }) });
 });
 
 app.post('/api/v1/owner/private-build/:privateBuildId/wallet/mutations', requireOwner, requireStepUp, requirePrivateBuild, async (req: Request, res: Response) => {

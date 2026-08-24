@@ -15,7 +15,7 @@ import { LocalStorage, StorageUnavailableError } from '../services/storage';
 import { PostgresStorage } from '../services/postgresStorage';
 import type { TaskRecord } from '../types/task';
 import { newDb } from 'pg-mem';
-import { createOwnerWallet, deriveWalletBalances, getOwnerWallet, listWalletRails, mutateOwnerWallet, reverseOwnerWalletTransaction, WalletOperationError } from '../services/walletService';
+import { createOwnerWallet, deriveWalletBalances, getOwnerWallet, listWalletRails, mutateOwnerWallet, resolveWalletRoute, reverseOwnerWalletTransaction, WalletOperationError } from '../services/walletService';
 
 describe('KC AI foundation', () => {
   it('creates a health response with status and service metadata', () => {
@@ -226,8 +226,10 @@ describe('KC AI foundation', () => {
 
   it('keeps country rails unconfigured and provider success unavailable', () => {
     const rails = listWalletRails();
-    expect(rails.map((rail) => rail.currency)).toEqual(expect.arrayContaining(['NGN', 'PHP', 'IDR', 'CNY', 'PKR']));
+    expect(rails.map((rail) => rail.currency)).toEqual(expect.arrayContaining(['NGN', 'PHP', 'IDR', 'PGK', 'CNY', 'PKR', 'MYR', 'SGD', 'THB', 'VND', 'INR', 'BDT', 'JPY', 'KRW']));
     expect(rails.every((rail) => rail.status === 'NOT_CONFIGURED')).toBe(true);
-    expect(rails.every((rail) => rail.reason.includes('No legitimate'))).toBe(true);
+    expect(rails.every((rail) => rail.reason.length > 0 && rail.complianceRequirements.length === 0)).toBe(true);
+    expect(resolveWalletRoute({ country: 'Philippines', currency: 'PHP', rail: 'bank-transfer', amountMinor: '100' }).available).toBe(false);
+    expect(resolveWalletRoute({ country: 'Atlantis', currency: 'XXX', rail: 'unknown', amountMinor: '100' }).reason).toContain('not configured');
   });
 });
