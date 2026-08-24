@@ -81,6 +81,7 @@ This repository contains the first usable autonomous KC AI foundation. It does n
 - `GET /api/v1/capabilities` exposes the Capability Truth Contract. Each capability is `available`, `planned`, or blocked by a specific requirement such as credentials or an external integration.
 - Owner Mode verifies a signed, expiring owner claim supplied as `Authorization: Bearer <token>`. A typed name or chat statement never grants owner privileges. The audit and Secret Bus status endpoints are owner-only.
 - Owner-only Private Build Mode requires both a verified Owner session and recent step-up re-authentication. It tracks private development work through `PRIVATE_BUILD -> VALIDATED -> OWNER_REVIEW_REQUIRED -> APPROVED_FOR_STAGING -> APPROVED_FOR_PRODUCTION`; approval never deploys, publishes, or activates real-money capabilities.
+- Owner-only wallet foundation is available only inside Private Build Mode. It stores immutable credit/debit ledger entries, derives balances from ledger records, protects mutations with idempotency and transaction locking, and keeps every unconfirmed transaction `UNVERIFIED`. It has no public route, withdrawal, transfer, funding provider, payout provider, or live money capability.
 - Private Build Mode tasks are associated with their private build context and remain in the existing private development/staging boundary. No browser/client code receives financial credentials, and no public route can activate the mode.
 - Important task actions create structured audit records with actor role, outcome, verification status, and redacted error text. Tasks, task history, and audit records use the configured storage adapter.
 - KC Secret Bus uses AES-256-GCM authenticated encryption in memory and requires `KC_AI_SECRET_BUS_KEY`. It never returns values through chat, logs, audit records, or status responses. Without that key it reports unavailable rather than pretending secure storage exists.
@@ -92,6 +93,7 @@ This repository contains the first usable autonomous KC AI foundation. It does n
 - KC Secret Bus production use requires a managed key-management system, owner re-authentication/recovery policy, encrypted durable storage, rotation, backup, and access monitoring. The current memory implementation is only an inspectable foundation.
 - Product data changes, deployment, email, payments, and other external side effects require registered integrations, scoped authorization, credentials, and verification adapters. They are currently unavailable or planned.
 - Private Build Mode does not implement wallet ledger execution, payment-provider calls, funding, withdrawals, deployment, publication, or production activation. Those capabilities remain blocked until separately integrated, authorized, and verified.
+- Wallet country and rail records use `NOT_CONFIGURED`, `CONFIGURED`, `TESTING`, `VERIFIED`, `LIVE`, or `DISABLED`. The current Nigeria/NGN, Philippines/PHP, Indonesia/IDR, China/CNY, and Pakistan/PKR entries are all `NOT_CONFIGURED`; no provider success can be recorded without a trusted verification mechanism.
 - Owner token issuance and identity lifecycle must be provided by a trusted KC identity service. This repository only verifies signed claims and does not issue owner credentials.
 
 ## Future owner phone companion roadmap
@@ -135,6 +137,8 @@ Audit entries contain action type, timestamp, task ID, actor role, outcome, veri
 `POST /api/v1/owner/private-build` starts a private build only after Owner Mode and step-up authentication succeed. `POST /api/v1/owner/private-build/:privateBuildId/tasks` creates owner-scoped tasks with private-build provenance. Lifecycle transitions use `POST /api/v1/owner/private-build/:privateBuildId/transition` and require the next state in order; invalid jumps and cross-owner access fail closed.
 
 The final `APPROVED_FOR_PRODUCTION` state is an explicit owner approval record, not a release command. Production/public release, real financial transactions, and payment-provider credentials remain separate capabilities and are not enabled by development completion.
+
+The wallet foundation is intentionally restricted to the `PRIVATE_BUILD` and `VALIDATED` development states. It supports future funding, remittance, payout, FX, webhook verification, and transaction-status provider interfaces, but none are connected. A real-money country or rail requires a legitimate provider, server-side credentials, applicable KYC/compliance controls, transaction verification, reconciliation, fraud controls, and tested operational recovery before it can be marked `LIVE`.
 
 ## Integration guidance for KC applications
 

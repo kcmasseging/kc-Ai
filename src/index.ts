@@ -11,6 +11,7 @@ import { createAndAdvanceTask, getTask, listTaskHistory, listTasks } from './ser
 import { listAuditRecords } from './services/auditService';
 import { initializeStorage, LocalStorage, configureStorage } from './services/storage';
 import { PostgresStorage } from './services/postgresStorage';
+import { createOwnerWallet, deriveWalletBalances, getOwnerWallet, listWalletRails, mutateOwnerWallet, reverseOwnerWalletTransaction, WalletOperationError } from './services/walletService';
 import { authenticateOwner, authConfigurationStatus, issueStepUpToken, logoutOwner, verifyOwnerSession, verifyStepUpTokenForSession } from './services/authService';
 import { SecretBus, type SecretType } from './services/secretBusService';
 import { advancePrivateBuild, createPrivateBuild, getPrivateBuild, type PrivateBuildStatus } from './services/privateBuildService';
@@ -201,6 +202,39 @@ app.post('/api/v1/owner/private-build/:privateBuildId/transition', requireOwner,
     return;
   }
   res.json({ build });
+});
+
+app.post('/api/v1/owner/private-build/:privateBuildId/wallet', requireOwner, requireStepUp, requirePrivateBuild, async (_req: Request, res: Response) => {
+  try { res.status(201).json({ wallet: await createOwnerWallet(res.locals.owner.subject) }); }
+  catch (error) { res.status(error instanceof WalletOperationError ? 409 : 503).json({ error: error instanceof Error ? error.message : 'Wallet unavailable' }); }
+});
+
+app.get('/api/v1/owner/private-build/:privateBuildId/wallet', requireOwner, requirePrivateBuild, async (_req: Request, res: Response) => {
+  try {
+    const wallet = await getOwnerWallet(res.locals.owner.subject);
+    if (!wallet) { res.status(404).json({ error: 'Owner wallet not found' }); return; }
+    res.json({ wallet, balances: deriveWalletBalances(wallet.ledger) });
+  } catch (error) { res.status(error instanceof WalletOperationError ? 404 : 503).json({ error: error instanceof Error ? error.message : 'Wallet unavailable' }); }
+});
+
+app.get('/api/v1/owner/private-build/:privateBuildId/wallet/rails', requireOwner, requirePrivateBuild, (_req: Request, res: Response) => {
+  res.json({ rails: listWalletRails() });
+});
+
+app.post('/api/v1/owner/private-build/:privateBuildId/wallet/mutations', requireOwner, requireStepUp, requirePrivateBuild, async (req: Request, res: Response) => {
+  try {
+    const direction = req.body?.direction;
+    if (direction !== 'CREDIT' && direction !== 'DEBIT') { res.status(400).json({ error: 'direction must be CREDIT or DEBIT' }); return; }
+    const result = await mutateOwnerWallet({ ownerId: res.locals.owner.subject, direction, currency: req.body.currency, amountMinor: req.body.amountMinor, idempotencyKey: req.body.idempotencyKey, reference: req.body.reference });
+    res.status(result.duplicate ? 200 : 201).json({ transaction: result.transaction, duplicate: result.duplicate });
+  } catch (error) { res.status(error instanceof WalletOperationError ? 409 : 503).json({ error: error instanceof Error ? error.message : 'Wallet mutation unavailable' }); }
+});
+
+app.post('/api/v1/owner/private-build/:privateBuildId/wallet/reversals', requireOwner, requireStepUp, requirePrivateBuild, async (req: Request, res: Response) => {
+  try {
+    const result = await reverseOwnerWalletTransaction({ ownerId: res.locals.owner.subject, transactionId: req.body?.transactionId, idempotencyKey: req.body?.idempotencyKey, reference: req.body?.reference });
+    res.status(result.duplicate ? 200 : 201).json({ transaction: result.transaction, duplicate: result.duplicate });
+  } catch (error) { res.status(error instanceof WalletOperationError ? 409 : 503).json({ error: error instanceof Error ? error.message : 'Wallet reversal unavailable' }); }
 });
 
 app.get('/api/v1/capabilities', (_req: Request, res: Response) => {

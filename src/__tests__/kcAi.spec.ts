@@ -15,6 +15,7 @@ import { LocalStorage, StorageUnavailableError } from '../services/storage';
 import { PostgresStorage } from '../services/postgresStorage';
 import type { TaskRecord } from '../types/task';
 import { newDb } from 'pg-mem';
+import { createOwnerWallet, deriveWalletBalances, getOwnerWallet, listWalletRails, mutateOwnerWallet, reverseOwnerWalletTransaction, WalletOperationError } from '../services/walletService';
 
 describe('KC AI foundation', () => {
   it('creates a health response with status and service metadata', () => {
@@ -191,5 +192,42 @@ describe('KC AI foundation', () => {
     const recovered = new LocalStorage(`${directory}/tasks.json`, `${directory}/audit.json`, `${directory}/history.json`);
     expect(await recovered.getTask(task.taskId)).toMatchObject({ status: 'completed' });
     expect(await recovered.listAuditRecords()).toHaveLength(1);
+  });
+
+  it('keeps the private wallet owner-scoped and persists its ledger safely', async () => {
+    const ownerId = `wallet-owner-${Date.now()}`;
+    const account = await createOwnerWallet(ownerId);
+    await expect(getOwnerWallet('other-owner')).rejects.toBeInstanceOf(WalletOperationError);
+    const credit = await mutateOwnerWallet({ ownerId, direction: 'CREDIT', currency: 'PHP', amountMinor: '1000', idempotencyKey: 'credit-1', reference: 'development funding ledger' });
+    const duplicate = await mutateOwnerWallet({ ownerId, direction: 'CREDIT', currency: 'PHP', amountMinor: '1000', idempotencyKey: 'credit-1', reference: 'development funding ledger' });
+    expect(duplicate).toMatchObject({ duplicate: true, transaction: { transactionId: credit.transaction.transactionId } });
+    const debit = await mutateOwnerWallet({ ownerId, direction: 'DEBIT', currency: 'PHP', amountMinor: '400', idempotencyKey: 'debit-1', reference: 'development debit ledger' });
+    expect(debit.transaction.status).toBe('UNVERIFIED');
+    await expect(mutateOwnerWallet({ ownerId, direction: 'DEBIT', currency: 'PHP', amountMinor: '700', idempotencyKey: 'debit-2', reference: 'insufficient test' })).rejects.toBeInstanceOf(WalletOperationError);
+    const wallet = await getOwnerWallet(ownerId);
+    expect(wallet?.account.walletId).toBe(account.walletId);
+    expect(deriveWalletBalances(wallet?.ledger || [])).toEqual({ PHP: '600' });
+    const reversal = await reverseOwnerWalletTransaction({ ownerId, transactionId: debit.transaction.transactionId, idempotencyKey: 'reverse-1', reference: 'development reversal' });
+    expect(reversal.transaction.status).toBe('REVERSED');
+    expect(deriveWalletBalances((await getOwnerWallet(ownerId))?.ledger || [])).toEqual({ PHP: '1000' });
+  });
+
+  it('protects wallet mutations under concurrent requests and rejects invalid currency', async () => {
+    const ownerId = `wallet-concurrency-${Date.now()}`;
+    await createOwnerWallet(ownerId);
+    await mutateOwnerWallet({ ownerId, direction: 'CREDIT', currency: 'NGN', amountMinor: '100', idempotencyKey: 'seed', reference: 'seed' });
+    const results = await Promise.allSettled([
+      mutateOwnerWallet({ ownerId, direction: 'DEBIT', currency: 'NGN', amountMinor: '60', idempotencyKey: 'debit-a', reference: 'concurrent a' }),
+      mutateOwnerWallet({ ownerId, direction: 'DEBIT', currency: 'NGN', amountMinor: '60', idempotencyKey: 'debit-b', reference: 'concurrent b' }),
+    ]);
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    await expect(mutateOwnerWallet({ ownerId, direction: 'CREDIT', currency: 'USD', amountMinor: '1', idempotencyKey: 'usd', reference: 'invalid currency' })).rejects.toBeInstanceOf(WalletOperationError);
+  });
+
+  it('keeps country rails unconfigured and provider success unavailable', () => {
+    const rails = listWalletRails();
+    expect(rails.map((rail) => rail.currency)).toEqual(expect.arrayContaining(['NGN', 'PHP', 'IDR', 'CNY', 'PKR']));
+    expect(rails.every((rail) => rail.status === 'NOT_CONFIGURED')).toBe(true);
+    expect(rails.every((rail) => rail.reason.includes('No legitimate'))).toBe(true);
   });
 });

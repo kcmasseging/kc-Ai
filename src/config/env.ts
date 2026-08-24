@@ -17,6 +17,7 @@ const envSchema = z.object({
   KC_AI_TASK_STORE_PATH: z.string().default('.kc-ai-tasks.json'),
   KC_AI_AUDIT_STORE_PATH: z.string().default('.kc-ai-audit.json'),
   KC_AI_TASK_HISTORY_STORE_PATH: z.string().default('.kc-ai-task-history.json'),
+  KC_AI_WALLET_STORE_PATH: z.string().default('.kc-ai-wallets.json'),
   KC_AI_STORAGE_DRIVER: z.enum(['local', 'postgres']).default('local'),
   KC_AI_DATABASE_URL: z.string().url().optional(),
   KC_AI_DATABASE_SSL: z.coerce.boolean().default(false),

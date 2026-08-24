@@ -7,5 +7,6 @@ coverage
 .kc-ai-tasks.json
 .kc-ai-audit.json
 .kc-ai-task-history.json
+.kc-ai-wallets.json
 .kc-ai-secrets.json
 .kc-ai-secrets.json

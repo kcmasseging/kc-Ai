@@ -1,6 +1,7 @@
 import type { AuditRecord } from './auditService';
-import { StorageUnavailableError, type Storage, type TaskHistoryRecord } from './storage';
+import { InsufficientBalanceError, StorageUnavailableError, type Storage, type TaskHistoryRecord } from './storage';
 import type { TaskRecord } from '../types/task';
+import type { WalletAccount, WalletLedgerEntry, WalletMutationInput, WalletMutationResult, WalletState, WalletTransaction } from '../types/wallet';
 
 interface QueryResult<T = unknown> { rows: T[]; rowCount: number | null; }
 interface PoolClient { query<T = unknown>(text: string, values?: unknown[]): Promise<QueryResult<T>>; release(): void; }
@@ -33,6 +34,40 @@ CREATE TABLE IF NOT EXISTS kc_ai_audit_records (
   error text
 );
 CREATE INDEX IF NOT EXISTS kc_ai_audit_timestamp_idx ON kc_ai_audit_records(timestamp);
+CREATE TABLE IF NOT EXISTS kc_ai_wallet_accounts (
+  wallet_id text PRIMARY KEY,
+  owner_id text NOT NULL UNIQUE,
+  status text NOT NULL,
+  created_at timestamptz NOT NULL
+);
+CREATE TABLE IF NOT EXISTS kc_ai_wallet_transactions (
+  transaction_id text PRIMARY KEY,
+  wallet_id text NOT NULL REFERENCES kc_ai_wallet_accounts(wallet_id),
+  idempotency_key text NOT NULL,
+  currency text NOT NULL,
+  amount_minor numeric(38, 0) NOT NULL CHECK (amount_minor > 0),
+  direction text NOT NULL CHECK (direction IN ('CREDIT', 'DEBIT')),
+  reference text NOT NULL,
+  status text NOT NULL,
+  provider_confirmed boolean NOT NULL DEFAULT false,
+  failure_reason text,
+  reversal_of text,
+  created_at timestamptz NOT NULL,
+  updated_at timestamptz NOT NULL,
+  UNIQUE (wallet_id, idempotency_key)
+);
+CREATE TABLE IF NOT EXISTS kc_ai_wallet_ledger (
+  entry_id text PRIMARY KEY,
+  wallet_id text NOT NULL REFERENCES kc_ai_wallet_accounts(wallet_id),
+  transaction_id text NOT NULL REFERENCES kc_ai_wallet_transactions(transaction_id),
+  currency text NOT NULL,
+  direction text NOT NULL CHECK (direction IN ('CREDIT', 'DEBIT')),
+  amount_minor numeric(38, 0) NOT NULL CHECK (amount_minor > 0),
+  reference text NOT NULL,
+  reversal_of text,
+  created_at timestamptz NOT NULL
+);
+CREATE INDEX IF NOT EXISTS kc_ai_wallet_ledger_balance_idx ON kc_ai_wallet_ledger(wallet_id, currency);
 `;
 
 export interface PostgresStorageOptions {
@@ -135,4 +170,46 @@ export class PostgresStorage implements Storage {
   }
 
   async clearAuditRecords(): Promise<void> { this.ensureInitialized(); const client = await this.getClient(); try { await client.query('DELETE FROM kc_ai_audit_records'); } finally { client.release(); } }
+
+  async createWalletAccount(account: WalletAccount): Promise<WalletAccount> {
+    this.ensureInitialized(); const client = await this.getClient();
+    try { await client.query('INSERT INTO kc_ai_wallet_accounts (wallet_id, owner_id, status, created_at) VALUES ($1, $2, $3, $4)', [account.walletId, account.ownerId, account.status, account.createdAt]); return { ...account }; }
+    catch (error) { throw new StorageUnavailableError('Wallet account creation failed', { cause: error }); }
+    finally { client.release(); }
+  }
+
+  async getWalletState(walletId: string): Promise<WalletState | undefined> {
+    this.ensureInitialized(); const client = await this.getClient();
+    try {
+      const account = await client.query<WalletAccount>('SELECT wallet_id AS "walletId", owner_id AS "ownerId", status, created_at AS "createdAt" FROM kc_ai_wallet_accounts WHERE wallet_id = $1', [walletId]);
+      if (!account.rows[0]) return undefined;
+      const transactions = await client.query<WalletTransaction>('SELECT transaction_id AS "transactionId", wallet_id AS "walletId", idempotency_key AS "idempotencyKey", currency, amount_minor::text AS "amountMinor", direction, reference, status, provider_confirmed AS "providerConfirmed", failure_reason AS "failureReason", reversal_of AS "reversalOf", created_at AS "createdAt", updated_at AS "updatedAt" FROM kc_ai_wallet_transactions WHERE wallet_id = $1 ORDER BY created_at', [walletId]);
+      const ledger = await client.query<WalletLedgerEntry>('SELECT entry_id AS "entryId", wallet_id AS "walletId", transaction_id AS "transactionId", currency, direction, amount_minor::text AS "amountMinor", reference, created_at AS "createdAt", reversal_of AS "reversalOf" FROM kc_ai_wallet_ledger WHERE wallet_id = $1 ORDER BY created_at, entry_id', [walletId]);
+      return { account: { ...account.rows[0] }, transactions: transactions.rows.map((row) => ({ ...row, providerConfirmed: false })), ledger: ledger.rows.map((row) => ({ ...row })) };
+    } finally { client.release(); }
+  }
+
+  async getWalletAccount(ownerId: string): Promise<WalletAccount | undefined> {
+    this.ensureInitialized(); const client = await this.getClient();
+    try { const result = await client.query<WalletAccount>('SELECT wallet_id AS "walletId", owner_id AS "ownerId", status, created_at AS "createdAt" FROM kc_ai_wallet_accounts WHERE owner_id = $1', [ownerId]); return result.rows[0] ? { ...result.rows[0] } : undefined; }
+    finally { client.release(); }
+  }
+
+  async applyWalletMutation(input: WalletMutationInput): Promise<WalletMutationResult> {
+    this.ensureInitialized(); const client = await this.getClient();
+    try {
+      await client.query('BEGIN');
+      const existing = await client.query<WalletTransaction>('SELECT transaction_id AS "transactionId", wallet_id AS "walletId", idempotency_key AS "idempotencyKey", currency, amount_minor::text AS "amountMinor", direction, reference, status, provider_confirmed AS "providerConfirmed", failure_reason AS "failureReason", reversal_of AS "reversalOf", created_at AS "createdAt", updated_at AS "updatedAt" FROM kc_ai_wallet_transactions WHERE wallet_id = $1 AND idempotency_key = $2 FOR UPDATE', [input.walletId, input.idempotencyKey]);
+      if (existing.rows[0]) { await client.query('COMMIT'); return { transaction: { ...existing.rows[0], providerConfirmed: false }, duplicate: true }; }
+      await client.query('SELECT wallet_id FROM kc_ai_wallet_accounts WHERE wallet_id = $1 FOR UPDATE', [input.walletId]);
+      const balance = await client.query<{ balance: string | null }>("SELECT COALESCE(SUM(CASE WHEN direction = 'CREDIT' THEN amount_minor ELSE -amount_minor END), 0)::text AS balance FROM kc_ai_wallet_ledger WHERE wallet_id = $1 AND currency = $2", [input.walletId, input.currency]);
+      if (input.direction === 'DEBIT' && BigInt(balance.rows[0]?.balance || '0') < BigInt(input.amountMinor)) throw new InsufficientBalanceError('Insufficient wallet balance');
+      const status = input.reversalOf ? 'REVERSED' : 'UNVERIFIED';
+      await client.query('INSERT INTO kc_ai_wallet_transactions (transaction_id, wallet_id, idempotency_key, currency, amount_minor, direction, reference, status, provider_confirmed, reversal_of, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, false, $9, $10, $10)', [input.transactionId, input.walletId, input.idempotencyKey, input.currency, input.amountMinor, input.direction, input.reference, status, input.reversalOf, input.now]);
+      await client.query('INSERT INTO kc_ai_wallet_ledger (entry_id, wallet_id, transaction_id, currency, direction, amount_minor, reference, reversal_of, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)', [`entry_${input.transactionId}`, input.walletId, input.transactionId, input.currency, input.direction, input.amountMinor, input.reference, input.reversalOf, input.now]);
+      await client.query('COMMIT');
+      return { transaction: { transactionId: input.transactionId, walletId: input.walletId, idempotencyKey: input.idempotencyKey, currency: input.currency, amountMinor: input.amountMinor, direction: input.direction, reference: input.reference, status, createdAt: input.now, updatedAt: input.now, providerConfirmed: false, reversalOf: input.reversalOf }, duplicate: false };
+    } catch (error) { try { await client.query('ROLLBACK'); } catch {} if (error instanceof StorageUnavailableError || error instanceof InsufficientBalanceError) throw error; throw new StorageUnavailableError('Wallet mutation transaction failed', { cause: error }); }
+    finally { client.release(); }
+  }
 }
