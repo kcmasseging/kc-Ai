@@ -82,13 +82,13 @@ This repository contains the first usable autonomous KC AI foundation. It does n
 - Owner Mode verifies a signed, expiring owner claim supplied as `Authorization: Bearer <token>`. A typed name or chat statement never grants owner privileges. The audit and Secret Bus status endpoints are owner-only.
 - Owner-only Private Build Mode requires both a verified Owner session and recent step-up re-authentication. It tracks private development work through `PRIVATE_BUILD -> VALIDATED -> OWNER_REVIEW_REQUIRED -> APPROVED_FOR_STAGING -> APPROVED_FOR_PRODUCTION`; approval never deploys, publishes, or activates real-money capabilities.
 - Private Build Mode tasks are associated with their private build context and remain in the existing private development/staging boundary. No browser/client code receives financial credentials, and no public route can activate the mode.
-- Important task actions create structured in-memory audit records with actor role, outcome, verification status, and redacted error text.
+- Important task actions create structured audit records with actor role, outcome, verification status, and redacted error text. Tasks and audit records persist locally through atomic, flushed files for single-process development use.
 - KC Secret Bus uses AES-256-GCM authenticated encryption in memory and requires `KC_AI_SECRET_BUS_KEY`. It never returns values through chat, logs, audit records, or status responses. Without that key it reports unavailable rather than pretending secure storage exists.
 - Temporary local task storage is marked by its filename and ignored by Git. No real credentials or vault contents belong in this repository.
 
 ## PLANNED / REQUIRES INFRASTRUCTURE
 
-- Durable highly available task and audit storage requires a production database and retention policy.
+- Durable highly available task and audit storage still requires a production database and retention policy. The current local stores are atomic and flushed, but remain single-process development storage.
 - KC Secret Bus production use requires a managed key-management system, owner re-authentication/recovery policy, encrypted durable storage, rotation, backup, and access monitoring. The current memory implementation is only an inspectable foundation.
 - Product data changes, deployment, email, payments, and other external side effects require registered integrations, scoped authorization, credentials, and verification adapters. They are currently unavailable or planned.
 - Private Build Mode does not implement wallet ledger execution, payment-provider calls, funding, withdrawals, deployment, publication, or production activation. Those capabilities remain blocked until separately integrated, authorized, and verified.
@@ -108,7 +108,7 @@ The vault accepts key material only from `KC_AI_SECRET_BUS_KEY`; it is never har
 
 ## Audit and verification
 
-Audit entries contain action type, timestamp, task ID, actor role, outcome, verification state, and safe errors. Secret-like values are redacted before storage. The service does not fabricate tool, deployment, payment, or production verification results. The `verified` state is used only for the local orchestration task that has no external side effect.
+Audit entries contain action type, timestamp, task ID, actor role, outcome, verification state, and safe errors. Records are written through atomic, flushed local files with restrictive permissions; secret-like values are redacted before storage. The service does not fabricate tool, deployment, payment, or production verification results. The `verified` state is used only for the local orchestration task that has no external side effect.
 
 ## Owner-only Private Build Mode
 

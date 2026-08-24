@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { loadJsonArray, writeJsonArray } from './localStore';
 
 export type AuditOutcome = 'started' | 'completed' | 'blocked' | 'failed';
 
@@ -16,19 +16,11 @@ const records: AuditRecord[] = [];
 const auditStorePath = process.env.KC_AI_AUDIT_STORE_PATH || '.kc-ai-audit.json';
 
 function persistRecords(): void {
-  const temporaryPath = `${auditStorePath}.${process.pid}.tmp`;
-  const directory = auditStorePath.includes('/') ? auditStorePath.slice(0, auditStorePath.lastIndexOf('/')) : '.';
-  mkdirSync(directory, { recursive: true, mode: 0o700 });
-  writeFileSync(temporaryPath, JSON.stringify(records), { mode: 0o600 });
-  renameSync(temporaryPath, auditStorePath);
+  writeJsonArray(auditStorePath, records);
 }
 
 function loadRecords(): void {
-  if (!existsSync(auditStorePath)) return;
-  try {
-    const storedRecords = JSON.parse(readFileSync(auditStorePath, 'utf8')) as AuditRecord[];
-    records.push(...storedRecords);
-  } catch {}
+  records.push(...loadJsonArray<AuditRecord>(auditStorePath));
 }
 
 loadRecords();

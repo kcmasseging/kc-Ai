@@ -1,34 +1,21 @@
 import { randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { checkCapability } from './capabilityService';
 import { recordAudit } from './auditService';
+import { loadJsonArray, writeJsonArray } from './localStore';
 import type { TaskRecord } from '../types/task';
 
 const tasks = new Map<string, TaskRecord>();
 const taskStorePath = process.env.KC_AI_TASK_STORE_PATH || '.kc-ai-tasks.json';
 
-if (existsSync(taskStorePath)) {
-  try {
-    const storedTasks = JSON.parse(readFileSync(taskStorePath, 'utf8')) as TaskRecord[];
-    for (const task of storedTasks) tasks.set(task.taskId, task);
-  } catch {}
-}
+for (const task of loadJsonArray<TaskRecord>(taskStorePath)) tasks.set(task.taskId, task);
 
 function persistTasks(): void {
-  const temporaryPath = `${taskStorePath}.${process.pid}.tmp`;
-  const directory = taskStorePath.includes('/') ? taskStorePath.slice(0, taskStorePath.lastIndexOf('/')) : '.';
-  mkdirSync(directory, { recursive: true, mode: 0o700 });
-  writeFileSync(temporaryPath, JSON.stringify([...tasks.values()]), { mode: 0o600 });
-  renameSync(temporaryPath, taskStorePath);
+  writeJsonArray(taskStorePath, [...tasks.values()]);
 }
 
 export function reloadTasks(): void {
   tasks.clear();
-  if (!existsSync(taskStorePath)) return;
-  try {
-    const storedTasks = JSON.parse(readFileSync(taskStorePath, 'utf8')) as TaskRecord[];
-    for (const task of storedTasks) tasks.set(task.taskId, task);
-  } catch {}
+  for (const task of loadJsonArray<TaskRecord>(taskStorePath)) tasks.set(task.taskId, task);
 }
 
 function inferCapability(goal: string): string {
