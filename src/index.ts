@@ -12,7 +12,7 @@ import { listAuditRecords } from './services/auditService';
 import { initializeStorage, LocalStorage, configureStorage } from './services/storage';
 import { PostgresStorage } from './services/postgresStorage';
 import { createOwnerWallet, deriveWalletBalances, getOwnerWallet, listWalletRails, mutateOwnerWallet, resolveWalletRoute, reverseOwnerWalletTransaction, WalletOperationError } from './services/walletService';
-import { authenticateOwner, authConfigurationStatus, issueStepUpToken, logoutOwner, verifyOwnerSession, verifyStepUpTokenForSession } from './services/authService';
+import { authenticateOwner, authConfigurationStatus, initializeOwner, issueStepUpToken, logoutOwner, verifyOwnerSession, verifyStepUpTokenForSession } from './services/authService';
 import { SecretBus, type SecretType } from './services/secretBusService';
 import { advancePrivateBuild, createPrivateBuild, getPrivateBuild, type PrivateBuildStatus } from './services/privateBuildService';
 import { verifySystem } from './services/systemVerificationService';
@@ -158,6 +158,16 @@ app.post('/api/v1/auth/login', async (req: Request, res: Response) => {
     return;
   }
   res.json(result);
+});
+
+app.post('/api/v1/auth/initialize', (req: Request, res: Response) => {
+  const setupSecret = typeof req.body?.setupSecret === 'string' ? req.body.setupSecret : '';
+  const passwordHash = typeof req.body?.passwordHash === 'string' ? req.body.passwordHash : '';
+  if (!initializeOwner({ setupSecret, passwordHash })) {
+    res.status(403).json({ error: 'Owner initialization is unavailable or the setup secret is invalid' });
+    return;
+  }
+  res.json({ ownerId: env.KC_AI_OWNER_ID, passwordHash, initializationComplete: true });
 });
 
 app.post('/api/v1/auth/logout', requireOwner, async (req: Request, res: Response) => {

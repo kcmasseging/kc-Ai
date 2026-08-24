@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createHmac } from 'node:crypto';
 import { createHealthResponse } from '../services/healthService';
 import { verifyOwnerToken } from '../services/ownerModeService';
-import { authenticateOwner, hashPassword, issueStepUpToken, verifyOwnerSession } from '../services/authService';
+import { authConfigurationStatus, authenticateOwner, hashPassword, initializeOwner, issueStepUpToken, verifyOwnerSession } from '../services/authService';
 import { createAndAdvanceTask } from '../services/taskService';
 import { clearAuditRecords, listAuditRecords } from '../services/auditService';
 import { createPrivateBuild, getPrivateBuild } from '../services/privateBuildService';
@@ -79,5 +79,14 @@ describe('KC AI owner acceptance', () => {
     expect(hashTool).not.toMatch(/fetch|XMLHttpRequest|localStorage|sessionStorage|console\.|document\.cookie/);
     expect(app).toContain("$('hash-password').value='';$('hash-password-confirm').value=''");
     expect(app).not.toMatch(/api\([^\n]*hash-password|JSON\.stringify\([^\n]*hash-password/);
+    expect(app).toContain('body:JSON.stringify({setupSecret,passwordHash})');
+    expect(app).not.toContain('body:JSON.stringify({setupSecret,password})');
+  });
+
+  it('cannot initialize after owner authentication has been configured', () => {
+    process.env.KC_AI_OWNER_PASSWORD_HASH = hashPassword('configured owner password');
+    process.env.KC_AI_OWNER_INITIALIZATION_SECRET = 'i'.repeat(32);
+    expect(initializeOwner({ setupSecret: 'i'.repeat(32), passwordHash: hashPassword('new owner password') })).toBe(false);
+    expect(authConfigurationStatus()).toMatchObject({ configured: true, initializationAvailable: false, mode: 'environment-hash' });
   });
 });

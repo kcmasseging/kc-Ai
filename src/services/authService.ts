@@ -22,6 +22,7 @@ const failureWindowMs = 15 * 60 * 1000;
 const failures = new Map<string, { count: number; resetAt: number }>();
 const revokedSessions = new Set<string>();
 const stepUpTokens = new Map<string, { sessionId: string; expiresAt: number }>();
+let ownerInitializationCompleted = false;
 
 function configuredPasswordHash(): string | undefined {
   return process.env.KC_AI_OWNER_PASSWORD_HASH || process.env.KC_AI_OWNER_BOOTSTRAP_PASSWORD
@@ -41,6 +42,25 @@ function verifyPassword(password: string, encoded: string): boolean {
   const actual = scryptSync(password, salt, 64);
   const expected = Buffer.from(expectedHex, 'hex');
   return actual.length === expected.length && timingSafeEqual(actual, expected);
+}
+
+function validPasswordHash(encoded: string): boolean {
+  const [algorithm, salt, expectedHex] = encoded.split('$');
+  return algorithm === 'scrypt' && /^[a-f0-9]+$/i.test(salt || '') && /^[a-f0-9]{128}$/i.test(expectedHex || '');
+}
+
+function secretsMatch(provided: string, expected: string): boolean {
+  const providedBytes = Buffer.from(provided);
+  const expectedBytes = Buffer.from(expected);
+  return providedBytes.length === expectedBytes.length && timingSafeEqual(providedBytes, expectedBytes);
+}
+
+export function initializeOwner(input: { setupSecret: string; passwordHash: string }): boolean {
+  if (ownerInitializationCompleted || process.env.KC_AI_OWNER_PASSWORD_HASH || !process.env.KC_AI_OWNER_INITIALIZATION_SECRET) return false;
+  if (!secretsMatch(input.setupSecret, process.env.KC_AI_OWNER_INITIALIZATION_SECRET) || !validPasswordHash(input.passwordHash)) return false;
+  process.env.KC_AI_OWNER_PASSWORD_HASH = input.passwordHash;
+  ownerInitializationCompleted = true;
+  return true;
 }
 
 function sign(encodedClaims: string, secret: string): string {
@@ -141,8 +161,8 @@ export function verifyStepUpTokenForSession(token: string | undefined, sessionId
   return true;
 }
 
-export function authConfigurationStatus(): { configured: boolean; mode: 'environment-hash' | 'development-bootstrap' | 'unconfigured' } {
-  if (process.env.KC_AI_OWNER_PASSWORD_HASH) return { configured: true, mode: 'environment-hash' };
-  if (process.env.KC_AI_ENV !== 'production' && process.env.KC_AI_OWNER_BOOTSTRAP_PASSWORD) return { configured: true, mode: 'development-bootstrap' };
-  return { configured: false, mode: 'unconfigured' };
+export function authConfigurationStatus(): { configured: boolean; initializationAvailable: boolean; mode: 'environment-hash' | 'development-bootstrap' | 'unconfigured' } {
+  if (process.env.KC_AI_OWNER_PASSWORD_HASH) return { configured: true, initializationAvailable: false, mode: 'environment-hash' };
+  if (process.env.KC_AI_ENV !== 'production' && process.env.KC_AI_OWNER_BOOTSTRAP_PASSWORD) return { configured: true, initializationAvailable: false, mode: 'development-bootstrap' };
+  return { configured: false, initializationAvailable: !ownerInitializationCompleted && Boolean(process.env.KC_AI_OWNER_INITIALIZATION_SECRET), mode: 'unconfigured' };
 }

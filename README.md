@@ -56,12 +56,15 @@ Required variables include:
 - `KC_AI_LOG_LEVEL`
 - `KC_AI_ALLOWED_ORIGINS`
 - `KC_AI_JWT_SECRET`
+- `KC_AI_OWNER_INITIALIZATION_SECRET` only during first production owner setup, when `KC_AI_OWNER_PASSWORD_HASH` is not configured
 - `KC_AI_TTS_PROVIDER`
 - `KC_AI_TTS_VOICE`
 - `KC_AI_ENABLE_VOICE`
 - `KC_AI_ENABLE_WELCOME`
 
 The project intentionally does not include real secrets or external credentials.
+
+For the one-time production owner bootstrap, create `KC_AI_OWNER_INITIALIZATION_SECRET` as a 32-character-or-longer random value in the Railway Variables screen using a password manager's random-secret generator. Open the deployed Owner Console, choose `Initialize Owner`, and enter that secret plus the owner password. The password is hashed in the browser and is never sent to the service. Copy the resulting hash to `KC_AI_OWNER_PASSWORD_HASH`, remove `KC_AI_OWNER_INITIALIZATION_SECRET`, and redeploy. Initialization is unavailable whenever an owner hash exists and is disabled after a successful initialization in the running process.
 
 ## Local development
 

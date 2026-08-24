@@ -13,6 +13,7 @@ const envSchema = z.object({
   KC_AI_SECRET_BUS_PATH: z.string().default('.kc-ai-secrets.json'),
   KC_AI_OWNER_ID: z.string().min(1).default('owner'),
   KC_AI_OWNER_PASSWORD_HASH: z.string().optional(),
+  KC_AI_OWNER_INITIALIZATION_SECRET: z.string().min(32).optional(),
   KC_AI_OWNER_BOOTSTRAP_PASSWORD: z.string().optional(),
   KC_AI_TASK_STORE_PATH: z.string().default('.kc-ai-tasks.json'),
   KC_AI_AUDIT_STORE_PATH: z.string().default('.kc-ai-audit.json'),
@@ -29,8 +30,8 @@ const envSchema = z.object({
 
 export const env = envSchema.parse(process.env);
 
-if (env.KC_AI_ENV === 'production' && (env.KC_AI_JWT_SECRET === 'development-secret-change-me' || !env.KC_AI_OWNER_PASSWORD_HASH || env.KC_AI_OWNER_BOOTSTRAP_PASSWORD)) {
-  throw new Error('Production requires KC_AI_JWT_SECRET and KC_AI_OWNER_PASSWORD_HASH; bootstrap passwords are disabled');
+if (env.KC_AI_ENV === 'production' && (env.KC_AI_JWT_SECRET === 'development-secret-change-me' || (!env.KC_AI_OWNER_PASSWORD_HASH && !env.KC_AI_OWNER_INITIALIZATION_SECRET) || env.KC_AI_OWNER_BOOTSTRAP_PASSWORD)) {
+  throw new Error('Production requires KC_AI_JWT_SECRET and either KC_AI_OWNER_PASSWORD_HASH or KC_AI_OWNER_INITIALIZATION_SECRET; bootstrap passwords are disabled');
 }
 
 if (env.KC_AI_ENV === 'production' && (env.KC_AI_STORAGE_DRIVER !== 'postgres' || !env.KC_AI_DATABASE_URL)) {
