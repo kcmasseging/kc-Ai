@@ -8,6 +8,7 @@ import { clearAuditRecords, listAuditRecords } from '../services/auditService';
 import { createPrivateBuild, getPrivateBuild } from '../services/privateBuildService';
 import { SecretBus } from '../services/secretBusService';
 import { verifySystem } from '../services/systemVerificationService';
+import { readFileSync } from 'node:fs';
 
 function signedOwnerClaim(secret: string, subject = 'acceptance-owner'): string {
   const claims = Buffer.from(JSON.stringify({ subject, role: 'owner', expiresAt: Date.now() + 60_000 })).toString('base64url');
@@ -67,5 +68,16 @@ describe('KC AI owner acceptance', () => {
 
   it('confirms the current source commit without claiming deployment evidence', () => {
     expect(createHealthResponse('test')).toMatchObject({ status: 'ok', service: 'kc-ai' });
+  });
+
+  it('keeps the owner hash tool local and owner-only', () => {
+    const html = readFileSync('public/index.html', 'utf8');
+    const app = readFileSync('public/app.js', 'utf8');
+    const hashTool = readFileSync('public/owner-password-hash.js', 'utf8');
+    expect(html).toContain('class="tab owner-only" data-view="password-hash"');
+    expect(app).toContain("if(view==='password-hash'&&!state.token){show('signin');return}");
+    expect(hashTool).not.toMatch(/fetch|XMLHttpRequest|localStorage|sessionStorage|console\.|document\.cookie/);
+    expect(app).toContain("$('hash-password').value='';$('hash-password-confirm').value=''");
+    expect(app).not.toMatch(/api\([^\n]*hash-password|JSON\.stringify\([^\n]*hash-password/);
   });
 });
