@@ -59,6 +59,29 @@ describe('KC AI foundation', () => {
     expect(task.blockedReason).toContain('deployment integration');
   });
 
+  it.each([
+    ['unsupported email send', "Send a test email to example@example.com saying 'KC AI capability test'. If email sending is not actually available, do not pretend to send it."],
+    ['unsupported payment', 'Transfer $25 to the test account'],
+    ['unsupported deploy', 'Publish this build to production'],
+    ['unsupported external message', 'Send an external message to the test recipient'],
+  ])('%s is blocked without a false harmless-task result', async (_label, goal) => {
+    const task = await createAndAdvanceTask({ goal });
+
+    expect(task.status).toBe('blocked');
+    expect(task.verificationStatus).toBe('not-verified');
+    expect(task.blockedReason).toBeTruthy();
+    expect(task.blockedReason).not.toContain('no external side effect');
+    expect(task.progress.join(' ')).not.toContain('Task completed: no external side effect was requested.');
+  });
+
+  it('still completes harmless internal work', async () => {
+    const task = await createAndAdvanceTask({ goal: 'summarize the internal task notes' });
+
+    expect(task.status).toBe('completed');
+    expect(task.verificationStatus).toBe('verified');
+    expect(task.progress).toContain('Task completed: no external side effect was requested.');
+  });
+
   it('encrypts Secret Bus values and reports missing key material', () => {
     const unavailable = new SecretBus();
     expect(unavailable.status().available).toBe(false);

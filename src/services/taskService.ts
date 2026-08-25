@@ -6,8 +6,13 @@ import type { TaskRecord } from '../types/task';
 
 function inferCapability(goal: string): string {
   const normalized = goal.toLowerCase();
-  if (normalized.includes('deploy')) return 'deployment';
-  if (normalized.includes('pay')) return 'payments';
+  if (/\b(send|sending|email|e-mail)\b/.test(normalized) && /\b(email|e-mail)\b/.test(normalized)) return 'email.send';
+  if (/\b(send|sending|message|messaging|text|sms|notify|notification)\b/.test(normalized)) return 'external-message.send';
+  if (/\b(pay|payment|payments|transfer|transfers|wire|refund|purchase|charge)\b/.test(normalized)) return 'payments';
+  if (/\b(deploy|deployment|publish|publishing|release|ship)\b/.test(normalized)) return 'deployment';
+  if (/\b(delete|deletion|remove|removal|erase|destroy)\b/.test(normalized) && /\b(file|files|folder|folders|record|records|data)\b/.test(normalized)) return 'file.deletion';
+  if (/\b(change|update|modify|edit|create|close|delete|reset)\b/.test(normalized) && /\b(account|profile|password|subscription|settings|permissions|user)\b/.test(normalized)) return 'account.changes';
+  if (/\b(api|webhook|external service|third-party|third party|integration)\b/.test(normalized)) return 'external-api.action';
   if (normalized.includes('database') || normalized.includes('product data')) return 'kc-product-data';
   return 'task.orchestration';
 }

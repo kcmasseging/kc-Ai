@@ -18,8 +18,13 @@ const capabilities: Capability[] = [
   { id: 'owner-health-watch', description: 'Owner-only health checks for registered KC product integrations', status: 'available', requiresOwner: true },
   { id: 'kc-secret-bus', description: 'Encrypted owner-only secret storage', status: 'credentials-required', requiresOwner: true, reason: 'KC_AI_SECRET_BUS_KEY is not configured' },
   { id: 'kc-product-data', description: 'Read or update data in connected KC products', status: 'external-integration-required', reason: 'No KC product integration is configured' },
+  { id: 'email.send', description: 'Send email through an external email provider', status: 'planned', reason: 'No email provider integration is implemented' },
+  { id: 'external-message.send', description: 'Send messages through an external messaging provider', status: 'planned', reason: 'No external messaging integration is implemented' },
   { id: 'deployment', description: 'Deploy software to an external environment', status: 'planned', reason: 'No deployment integration is implemented' },
   { id: 'payments', description: 'Initiate or complete payments', status: 'planned', reason: 'No payment integration is implemented' },
+  { id: 'account.changes', description: 'Change an account or external service setting', status: 'planned', reason: 'No account-management integration is implemented' },
+  { id: 'file.deletion', description: 'Delete files in an external or persistent system', status: 'planned', reason: 'No file-deletion integration is implemented' },
+  { id: 'external-api.action', description: 'Perform an action through an external API', status: 'planned', reason: 'No external API integration is implemented' },
 ];
 
 export function listCapabilities(): Capability[] {
