@@ -7,17 +7,31 @@ import type { TaskRecord } from '../types/task';
 import { WebSearchProviderError, type SearchProvider, type WebSearchResponse } from './webSearchService';
 import { redactSensitive } from './auditService';
 import { researchWeb } from './browserResearchService';
-import { fetchWebPage, WebFetchError } from './webFetchService';
+import { extractReadableContent, fetchWebPage, WebFetchError } from './webFetchService';
 
 export function classifyGoal(goal: string): string {
   const normalized = goal.toLowerCase();
+  const explicitResearch = /\b(search|research|browse|look up|lookup)\b/.test(normalized);
+  const researchOnly = explicitResearch && !/\b(build(?:ing)?|implement|refactor|fix|test|development)\b/.test(normalized);
+  const explicitMessageSend = (/\b(send|sending|deliver|delivering|forward|forwarding)\b/.test(normalized) &&
+    /\b(message|text|sms|notification|notify|messaging)\b/.test(normalized) &&
+    (/\b(to|for|via|through|externally|recipient|customer|user|contact|number)\b/.test(normalized) || /@/.test(normalized))) ||
+    /\bmessage\s+(?:this|that|the|a|an)\s+(?:customer|user|contact|number|recipient)\b/.test(normalized);
+  const explicitEmailSend = /\b(send|sending)\b.*\b(email|e-mail)\b|\b(email|e-mail)\b.*\b(send|sending)\b/.test(normalized);
+  const explicitExternalAction = explicitMessageSend || explicitEmailSend || /\b(transfer|pay|payment|deploy|deployment|publish|release|ship)\b/.test(normalized);
+  const developmentGoal = !explicitExternalAction && !researchOnly && !/\b(private build|private development|staging build)\b/.test(normalized) &&
+    (/\b(build|implement|refactor|fix|test|architecture|ui|capability|repository|commit|push|main branch|software|development)\b/.test(normalized) ||
+    (/\b(architecture|capability)\b/.test(normalized) && !explicitResearch) ||
+    (/\b(build|fix|test)\b/.test(normalized) && /\b(kc browser|code|feature|function|interface|unit test|spec|repository|software)\b/.test(normalized)));
+  if (developmentGoal) return 'task.orchestration';
   if (/\b(fetch|read|open|retrieve)\b/.test(normalized) && /https?:\/\/\S+/.test(normalized)) return 'web.fetch/read';
   if (/\b(send|sending|email|e-mail)\b/.test(normalized) && /\b(email|e-mail)\b/.test(normalized)) return 'email.send';
-  if (/\b(send|sending|message|messaging|text|sms|notify|notification)\b/.test(normalized)) return 'message.send';
+  if (/\b(send|deliver|message)\b/.test(normalized) && /\b(to|for|via|through|externally|recipient|customer|user|contact|number|@)\b/.test(normalized) && /\b(message|text|sms|messaging|notification|notify)\b/.test(normalized)) return 'message.send';
   if (/\b(pay|payment|payments|transfer|transfers|wire|refund|purchase|charge)\b/.test(normalized)) return 'payment.transfer';
   if (/\b(deploy|deployment|publish|publishing|release|ship)\b/.test(normalized)) return 'deployment.execute';
   if (/\b(delete|deletion|remove|removal|erase|destroy)\b/.test(normalized) && /\b(file|files|folder|folders|record|records|data)\b/.test(normalized)) return 'file.delete';
   if (/\b(search|browse|look up|lookup)\b/.test(normalized) && /\b(web|internet|online)\b/.test(normalized)) return 'web.search';
+  if (/\b(research|investigate|find multiple sources|compare sources)\b/.test(normalized) && /\b(web|internet|online|sources?|research)\b/.test(normalized)) return 'browser.research';
   if (/\b(private build|private development|staging build)\b/.test(normalized)) return 'owner.private-build';
   if (/\b(change|update|modify|edit|create|close|delete|reset)\b/.test(normalized) && /\b(account|profile|password|subscription|settings|permissions|user)\b/.test(normalized)) return 'account.changes';
   if (/\b(api|webhook|external service|third-party|third party|integration)\b/.test(normalized)) return 'external-api.action';
@@ -35,6 +49,7 @@ function capabilityMatchesGoal(goal: string, capability: string): boolean {
     'deployment.execute': /\b(deploy|deployment|publish|publishing|release|ship)\b/i,
     'file.delete': /\b(delete|deletion|remove|removal|erase|destroy)\b.*\b(file|files|folder|folders|record|records|data)\b/i,
     'web.search': /\b(search|browse|look up|lookup)\b.*\b(web|internet|online)\b|\b(web|internet|online)\b.*\b(search|browse|look up|lookup)\b/i,
+    'browser.research': /\b(research|investigate|find multiple sources|compare sources)\b.*\b(web|internet|online|sources?|research)\b|\b(web|internet|online|sources?)\b.*\b(research|investigate|find multiple sources|compare sources)\b/i,
     'owner.private-build': /\b(private build|private development|staging build)\b/i,
     'account.changes': /\b(change|update|modify|edit|create|close|delete|reset)\b.*\b(account|profile|password|subscription|settings|permissions|user)\b/i,
     'external-api.action': /\b(api|webhook|external service|third-party|third party|integration)\b/i,
@@ -184,9 +199,10 @@ export async function createAndAdvanceTask(input: {
       task.progress.push('Read-only web page retrieval started.');
       try {
         const page = await (input.fetchPage || fetchWebPage)(pageUrl!);
-        task.result = `RETRIEVED SOURCE\nURL: ${page.url}\nRetrieved at: ${page.retrievedAt}\nContent type: ${page.contentType}\nUNTRUSTED PAGE CONTENT\n${page.content}`;
-        task.sources = [{ title: page.url, url: page.url, domain: new URL(page.url).hostname, snippet: page.content.slice(0, 500), provider: 'web.fetch/read', retrievedAt: page.retrievedAt }];
-        task.executionEvidence = `Retrieved ${page.contentType} content from ${page.url}; content is marked untrusted.`;
+        const extracted = page.title && page.summary ? { title: page.title, summary: page.summary } : extractReadableContent(page.content, page.contentType);
+        task.result = `RETRIEVED SOURCE\nTitle: ${extracted.title}\nURL: ${page.url}\nRetrieved at: ${page.retrievedAt}\nReadable summary: ${extracted.summary}\nCapability: web.fetch/read\nVerification: Public page retrieved as untrusted data; no webpage instructions were executed.`;
+        task.sources = [{ title: extracted.title, url: page.url, domain: new URL(page.url).hostname, snippet: extracted.summary, provider: 'web.fetch/read', retrievedAt: page.retrievedAt }];
+        task.executionEvidence = `Retrieved readable content from ${page.url}; webpage content remained untrusted data.`;
         task.verificationResult = `Verified retrieval response from web.fetch/read at ${page.retrievedAt}; no webpage instructions were executed.`;
         task.status = 'completed';
         task.verificationStatus = 'verified';
@@ -204,6 +220,44 @@ export async function createAndAdvanceTask(input: {
         task.updatedAt = new Date().toISOString();
         await getStorage().updateTask(task);
         await recordAudit({ actionType: 'task.failed', taskId: task.taskId, actorRole: input.actorRole || 'user', outcome: 'failed', verificationStatus: 'not-verified', error: task.lastError, capabilityUsed: 'web.fetch/read', providerName: 'web-fetch' });
+        return { ...task, progress: [...task.progress] };
+      }
+    }
+    if (task.requiredCapability === 'browser.research') {
+      task.status = 'executing';
+      task.progress.push('Read-only browser research execution started.');
+      const query = searchQuery(task.goal);
+      try {
+        const research = await researchWeb(query, undefined, input.searchProvider);
+        const fetched = await Promise.all(research.sources.slice(0, 5).map(async (source) => {
+          try { return await (input.fetchPage || fetchWebPage)(source.url); } catch { return undefined; }
+        }));
+        const readableSources = fetched.filter(Boolean).map((page) => {
+          const extracted = page!.title && page!.summary ? page! : extractReadableContent(page!.content, page!.contentType);
+          return { title: extracted.title, url: page!.url, summary: extracted.summary, retrievedAt: page!.retrievedAt };
+        });
+        const verifiedAt = new Date().toISOString();
+        task.sources = research.sources;
+        task.result = `RESEARCH\nQuery: ${redactSensitive(query)}\nSources selected: ${research.sources.length}\nSources fetched safely: ${readableSources.length}\n\n${readableSources.map((source, index) => `${index + 1}. ${source.title}\n${source.url}\n${source.summary}`).join('\n\n')}\n\nVERIFICATION\nSearch provider ${research.response.provider} returned normalized sources at ${research.retrievedAt}. Fetched page content was treated as UNTRUSTED DATA; no webpage instructions were executed.\nFinal status: ${readableSources.length ? 'completed' : 'unavailable'}`;
+        task.executionEvidence = `Provider ${research.response.provider} returned ${research.sources.length} source(s); ${readableSources.length} public source(s) passed safe retrieval.`;
+        task.verificationResult = `Verified read-only browser research at ${verifiedAt}; source URLs and retrieval timestamps retained; page instructions were not executed.`;
+        task.status = readableSources.length ? 'completed' : 'failed';
+        task.verificationStatus = readableSources.length ? 'verified' : 'not-verified';
+        task.finalResult = task.result;
+        task.progress.push(task.result);
+        task.lastSuccessfulStep = readableSources.length ? task.result : undefined;
+        task.lastError = readableSources.length ? undefined : 'No selected research source could be safely retrieved';
+        task.updatedAt = verifiedAt;
+        await getStorage().updateTask(task);
+        await recordAudit({ actionType: readableSources.length ? 'task.completed' : 'task.failed', taskId: task.taskId, actorRole: input.actorRole || 'user', outcome: readableSources.length ? 'completed' : 'failed', verificationStatus: task.verificationStatus, capabilityUsed: 'browser.research', providerName: research.response.provider, resultCount: research.sources.length, verificationResult: task.verificationResult });
+        return { ...task, progress: [...task.progress] };
+      } catch (error) {
+        task.status = 'failed';
+        task.lastError = error instanceof WebSearchProviderError ? error.message : error instanceof Error ? error.message : 'Browser research failed unexpectedly';
+        task.progress.push(`Failed: ${task.lastError}.`);
+        task.updatedAt = new Date().toISOString();
+        await getStorage().updateTask(task);
+        await recordAudit({ actionType: 'task.failed', taskId: task.taskId, actorRole: input.actorRole || 'user', outcome: 'failed', verificationStatus: 'not-verified', error: task.lastError, capabilityUsed: 'browser.research' });
         return { ...task, progress: [...task.progress] };
       }
     }

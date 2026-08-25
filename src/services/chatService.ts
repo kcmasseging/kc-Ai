@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { listCapabilities } from './capabilityService';
+import type { Capability } from './capabilityService';
 
 export const ChatRequestSchema = z.object({
   message: z.string().min(1).max(4000),
@@ -25,7 +27,7 @@ export interface ChatResponse {
   sessionId?: string;
 }
 
-export function generateChatReply(input: ChatRequest): ChatResponse {
+export function generateChatReply(input: ChatRequest, getCapabilities: () => Capability[] = listCapabilities): ChatResponse {
   const appContext = input.appId || input.appName ? {
     appId: input.appId,
     appName: input.appName,
@@ -56,6 +58,30 @@ export function generateChatReply(input: ChatRequest): ChatResponse {
       appContext,
       sessionId: input.sessionId,
     };
+  }
+
+  if (normalized.includes('capabilit') && (normalized.includes('available') || normalized.includes('registered') || normalized.includes('status'))) {
+    try {
+      const capabilities = getCapabilities();
+      const capabilitySummary = capabilities.map((capability) => {
+        const reason = capability.reason ? ` (${capability.reason})` : '';
+        const ownerAccess = capability.requiresOwner ? ' [owner only]' : '';
+        return `- ${capability.id}: ${capability.status}${ownerAccess} - ${capability.description}${reason}`;
+      }).join('\n');
+
+      return {
+        reply: `Currently registered capabilities (${capabilities.length}):\n${capabilitySummary || 'No capabilities are currently registered.'}`,
+        appContext,
+        sessionId: input.sessionId,
+      };
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : 'The capability registry could not be read.';
+      return {
+        reply: `Capability availability is currently unavailable because the live capability registry could not be read: ${reason}`,
+        appContext,
+        sessionId: input.sessionId,
+      };
+    }
   }
 
   return {

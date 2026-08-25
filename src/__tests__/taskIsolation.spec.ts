@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createAndAdvanceTask } from '../services/taskService';
+import { classifyGoal, createAndAdvanceTask } from '../services/taskService';
 import { reloadTasks } from '../services/taskService';
 import { clearAuditRecords, listAuditRecords } from '../services/auditService';
 
@@ -10,6 +10,13 @@ const searchProvider = {
 };
 
 describe('KC AI task isolation', () => {
+  it('does not classify development and UI language as external messaging', () => {
+    expect(classifyGoal('Continue from the current main branch. Start building the real KC Browser capability now. Connect the existing Open KC Browser UI/button and show useful research results.')).toBe('task.orchestration');
+    expect(classifyGoal('Build a message composer UI')).not.toBe('message.send');
+    expect(classifyGoal('Improve KC Messaging status cards')).not.toBe('message.send');
+    expect(classifyGoal('Send a message to example@example.com saying hello')).toBe('message.send');
+  });
+
   it('classifies a new internal task independently after blocked email work', async () => {
     const email = await createAndAdvanceTask({ goal: 'Send an email to the test recipient' });
     const internal = await createAndAdvanceTask({ goal: 'Analyze the internal task notes' });

@@ -1,9 +1,25 @@
 import { describe, expect, it } from 'vitest';
 import { checkCapability } from '../services/capabilityService';
 import { clearAuditRecords, listAuditRecords } from '../services/auditService';
-import { createAndAdvanceTask } from '../services/taskService';
+import { classifyGoal, createAndAdvanceTask } from '../services/taskService';
 
 describe('KC AI decision and execution brain', () => {
+  it.each([
+    'Continue from the current main branch. Start building the real KC Browser capability now... Connect the existing Open KC Browser UI/button ... show useful research results...',
+    'Build a message composer UI',
+    'Improve KC Messaging status cards',
+  ])('routes development goal internally: %s', (goal) => {
+    expect(classifyGoal(goal)).toBe('task.orchestration');
+    expect(classifyGoal(goal)).not.toBe('message.send');
+    expect(classifyGoal(goal)).not.toBe('email.send');
+  });
+
+  it('requires send intent and an external destination for message.send', () => {
+    expect(classifyGoal('Send a message to example@example.com saying hello')).toBe('message.send');
+    expect(classifyGoal('Message this customer')).toBe('message.send');
+    expect(classifyGoal('Update chat response formatting')).toBe('task.orchestration');
+  });
+
   it('completes internal work only after execution and verification', async () => {
     await clearAuditRecords();
     const task = await createAndAdvanceTask({ goal: 'analyze the supplied internal notes' });
@@ -53,6 +69,15 @@ describe('KC AI decision and execution brain', () => {
     expect(browserBuildTask.requiredCapability).toBe('task.orchestration');
     expect(browserBuildTask.requiredCapability).not.toBe(emailTask.requiredCapability);
     expect(browserBuildTask.goal).toBe('Build KC Browser');
+  });
+
+  it('does not inherit a previous message.send classification during browser development', async () => {
+    const messageTask = await createAndAdvanceTask({ goal: 'Send a message to example@example.com saying hello' });
+    const browserBuildTask = await createAndAdvanceTask({ goal: 'Build KC Browser and show useful research results' });
+
+    expect(messageTask.requiredCapability).toBe('message.send');
+    expect(browserBuildTask.requiredCapability).toBe('task.orchestration');
+    expect(browserBuildTask.requiredCapability).not.toBe(messageTask.requiredCapability);
   });
 
   it('does not report an unavailable capability as executed', async () => {

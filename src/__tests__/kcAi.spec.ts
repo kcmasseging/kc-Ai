@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createHealthResponse } from '../services/healthService';
 import { createWelcomeMessage } from '../services/welcomeService';
 import { checkCapability } from '../services/capabilityService';
+import { generateChatReply } from '../services/chatService';
 import { createAndAdvanceTask } from '../services/taskService';
 import { getTask, listTaskHistory, reloadTasks } from '../services/taskService';
 import { SecretBus } from '../services/secretBusService';
@@ -18,6 +19,29 @@ import { newDb } from 'pg-mem';
 import { createOwnerWallet, deriveWalletBalances, getOwnerWallet, listWalletRails, mutateOwnerWallet, resolveWalletRoute, reverseOwnerWalletTransaction, WalletOperationError } from '../services/walletService';
 
 describe('KC AI foundation', () => {
+  it('answers capability questions from the live capability registry data', () => {
+    const response = generateChatReply({ message: 'What capabilities are available?' }, () => [
+      { id: 'test.live-capability', description: 'A capability registered for this test', status: 'credentials-required', reason: 'Test credentials are absent' },
+      { id: 'test.owner-capability', description: 'An owner-only test capability', status: 'available', requiresOwner: true },
+    ]);
+
+    expect(response.reply).toContain('Currently registered capabilities (2)');
+    expect(response.reply).toContain('test.live-capability: credentials-required');
+    expect(response.reply).toContain('Test credentials are absent');
+    expect(response.reply).toContain('test.owner-capability: available [owner only]');
+    expect(response.reply).not.toContain('chat.reply');
+  });
+
+  it('reports capability registry failures without claiming availability', () => {
+    const response = generateChatReply({ message: 'What is the status of the registered capabilities?' }, () => {
+      throw new Error('registry timeout');
+    });
+
+    expect(response.reply).toContain('Capability availability is currently unavailable');
+    expect(response.reply).toContain('registry timeout');
+    expect(response.reply).not.toContain('Currently registered capabilities');
+  });
+
   it('creates a health response with status and service metadata', () => {
     const response = createHealthResponse();
 

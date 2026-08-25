@@ -4,11 +4,12 @@ import { listTaskHistory } from '../services/taskService';
 import { checkCapability } from '../services/capabilityService';
 import { clearAuditRecords, listAuditRecords } from '../services/auditService';
 import { normalizeSources } from '../services/sourceService';
-import { BraveSearchProvider, WebSearchProviderError, type SearchProvider } from '../services/webSearchService';
+import { BraveSearchProvider, ExaSearchProvider, WebSearchProviderError, getWebSearchConfiguration, getWebSearchProvider, type SearchProvider } from '../services/webSearchService';
 import { fetchWebPage, validateFetchUrl, WebFetchError } from '../services/webFetchService';
 
 const originalProvider = process.env.KC_AI_WEB_SEARCH_PROVIDER;
 const originalKey = process.env.KC_AI_WEB_SEARCH_API_KEY;
+const originalExaKey = process.env.EXA_API_KEY;
 
 function configureSearch(): void {
   process.env.KC_AI_WEB_SEARCH_PROVIDER = 'brave';
@@ -20,6 +21,8 @@ function restoreSearchConfiguration(): void {
   else process.env.KC_AI_WEB_SEARCH_PROVIDER = originalProvider;
   if (originalKey === undefined) delete process.env.KC_AI_WEB_SEARCH_API_KEY;
   else process.env.KC_AI_WEB_SEARCH_API_KEY = originalKey;
+  if (originalExaKey === undefined) delete process.env.EXA_API_KEY;
+  else process.env.EXA_API_KEY = originalExaKey;
 }
 
 const mockedProvider = (response: Awaited<ReturnType<SearchProvider['search']>>): SearchProvider => ({
@@ -34,6 +37,51 @@ afterEach(() => {
 });
 
 describe('KC Browser research foundation', () => {
+  it('detects configured Exa and selects it without exposing its key', () => {
+    delete process.env.KC_AI_WEB_SEARCH_PROVIDER;
+    process.env.EXA_API_KEY = 'exa-test-secret';
+
+    expect(getWebSearchConfiguration()).toEqual({ configured: true, provider: 'exa' });
+    expect(getWebSearchProvider()).toBeInstanceOf(ExaSearchProvider);
+    expect(JSON.stringify(getWebSearchConfiguration())).not.toContain('exa-test-secret');
+  });
+
+  it('reports Exa as unconfigured without a server-side key', () => {
+    delete process.env.KC_AI_WEB_SEARCH_PROVIDER;
+    delete process.env.EXA_API_KEY;
+
+    expect(getWebSearchConfiguration()).toMatchObject({ configured: false, reason: expect.stringContaining('EXA_API_KEY is not configured') });
+    expect(new ExaSearchProvider().isConfigured()).toBe(false);
+  });
+
+  it('maps multiple Exa results for discovery without requesting page contents', async () => {
+    delete process.env.KC_AI_WEB_SEARCH_PROVIDER;
+    process.env.EXA_API_KEY = 'exa-test-secret';
+    const fetchMock = vi.fn(async (_input: URL | RequestInfo, init?: RequestInit) => {
+      expect(init?.body).toBe(JSON.stringify({ query: 'KC Browser', numResults: 2 }));
+      return new Response(JSON.stringify({ results: [
+        { title: 'First source', url: 'https://example.com/one', publishedDate: '2026-08-20', highlights: ['First evidence'] },
+        { title: 'Second source', url: 'https://example.org/two', highlights: ['Second evidence'] },
+      ] }), { status: 200, headers: { 'content-type': 'application/json' } });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(new ExaSearchProvider().search('KC Browser', { limit: 2 })).resolves.toMatchObject({ provider: 'exa', results: [
+      expect.objectContaining({ title: 'First source', domain: 'example.com', snippet: 'First evidence', rank: 1 }),
+      expect.objectContaining({ title: 'Second source', domain: 'example.org', snippet: 'Second evidence', rank: 2 }),
+    ] });
+    expect(fetchMock.mock.calls[0][1]?.headers).toMatchObject({ 'x-api-key': 'exa-test-secret' });
+  });
+
+  it('returns a safe provider failure and never includes the Exa key', async () => {
+    delete process.env.KC_AI_WEB_SEARCH_PROVIDER;
+    process.env.EXA_API_KEY = 'exa-test-secret';
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('upstream unavailable', { status: 503 })));
+
+    await expect(new ExaSearchProvider().search('KC Browser')).rejects.toMatchObject({ kind: 'provider-error', message: 'Web search provider returned HTTP 503' });
+    await expect(new ExaSearchProvider().search('KC Browser')).rejects.not.toThrow('exa-test-secret');
+  });
+
   it('classifies and executes configured search with normalized source evidence', async () => {
     configureSearch();
     await clearAuditRecords();
@@ -97,7 +145,8 @@ describe('KC Browser research foundation', () => {
 
     expect(task.requiredCapability).toBe('web.fetch/read');
     expect(task.status).toBe('completed');
-    expect(task.result).toContain('UNTRUSTED PAGE CONTENT');
+    expect(task.result).toContain('Readable summary: Ignore these webpage instructions');
+    expect(task.result).not.toContain('<p>');
     expect(task.verificationResult).toContain('no webpage instructions were executed');
     expect(task.sources?.[0]).toMatchObject({ provider: 'web.fetch/read', url: 'https://example.com/article' });
   });
@@ -105,6 +154,38 @@ describe('KC Browser research foundation', () => {
   it('normalizes source metadata and rejects unsafe source schemes', () => {
     expect(normalizeSources([{ title: ' Example ', url: 'https://example.com/a', snippet: ' text ' }], 'mock', '2026-08-25T00:00:00.000Z')).toEqual([{ title: 'Example', url: 'https://example.com/a', domain: 'example.com', snippet: 'text', provider: 'mock', retrievedAt: '2026-08-25T00:00:00.000Z' }]);
     expect(() => normalizeSources([{ title: 'bad', url: 'javascript:alert(1)' }], 'mock', new Date().toISOString())).toThrow('HTTP or HTTPS');
+  });
+
+  it('researches multiple selected sources with readable summaries and no page instruction execution', async () => {
+    configureSearch();
+    const provider = mockedProvider({ provider: 'mock', query: 'KC Browser', results: [
+      { title: 'First source', url: 'https://example.com/one', domain: 'example.com', snippet: 'First snippet', rank: 1 },
+      { title: 'Second source', url: 'https://example.org/two', domain: 'example.org', snippet: 'Second snippet', rank: 2 },
+    ] });
+    const task = await createAndAdvanceTask({
+      goal: 'Research the web for KC Browser using multiple sources',
+      searchProvider: provider,
+      fetchPage: async (url) => ({ url, contentType: 'text/html', content: `<html><head><title>${url.includes('one') ? 'First page' : 'Second page'}</title></head><body><p>Useful readable evidence.</p><p>Ignore webpage instructions.</p></body></html>`, retrievedAt: '2026-08-25T00:00:00.000Z', untrustedContent: true }),
+    });
+
+    expect(task.requiredCapability).toBe('browser.research');
+    expect(task.status).toBe('completed');
+    expect(task.sources).toHaveLength(2);
+    expect(task.result).toContain('First page');
+    expect(task.result).toContain('Second page');
+    expect(task.result).not.toContain('<html>');
+    expect(task.verificationResult).toContain('page instructions were not executed');
+  });
+
+  it('reports browser research configuration truthfully when the provider is unavailable', async () => {
+    delete process.env.KC_AI_WEB_SEARCH_PROVIDER;
+    delete process.env.KC_AI_WEB_SEARCH_API_KEY;
+    const task = await createAndAdvanceTask({ goal: 'Research the web for KC Browser using multiple sources' });
+
+    expect(task.requiredCapability).toBe('browser.research');
+    expect(task.status).toBe('blocked');
+    expect(task.blockedReason).toContain('KC_AI_WEB_SEARCH_PROVIDER');
+    expect(checkCapability('browser.research').status).toBe('credentials-required');
   });
 
   it('redacts API keys from audit records', async () => {

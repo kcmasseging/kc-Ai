@@ -11,6 +11,9 @@ export interface WebFetchResponse {
   url: string;
   contentType: string;
   content: string;
+  title?: string;
+  readableText?: string;
+  summary?: string;
   retrievedAt: string;
   untrustedContent: true;
 }
@@ -38,6 +41,26 @@ function isPrivateIpv6(hostname: string): boolean {
 
 function isPrivateAddress(address: string): boolean {
   return isPrivateIpv4(address) || (isIP(address) === 6 && isPrivateIpv6(address));
+}
+
+export function extractReadableContent(content: string, contentType: string): { title: string; readableText: string; summary: string } {
+  if (contentType === 'text/plain') {
+    const readableText = content.replace(/\s+/g, ' ').trim();
+    return { title: 'Untitled page', readableText, summary: readableText.slice(0, 600) };
+  }
+  const title = content.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1]?.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim() || 'Untitled page';
+  const readableText = content
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<noscript[\s\S]*?<\/noscript>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return { title, readableText, summary: readableText.slice(0, 600) };
 }
 
 export function validateFetchUrl(input: string): URL {
@@ -91,5 +114,6 @@ export async function fetchWebPage(input: string, options: WebFetchOptions = {})
     }
   } finally { reader.releaseLock(); }
   const content = Buffer.concat(chunks.map((chunk) => Buffer.from(chunk))).toString('utf8');
-  return { url: url.toString(), contentType, content, retrievedAt: new Date().toISOString(), untrustedContent: true };
+  const extracted = extractReadableContent(content, contentType);
+  return { url: url.toString(), contentType, content, ...extracted, retrievedAt: new Date().toISOString(), untrustedContent: true };
 }
