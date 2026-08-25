@@ -37,6 +37,13 @@ export interface TaskRecord {
   requiredCapability?: string;
   blockedReason?: string;
   verificationStatus: 'not-verified' | 'verified';
+  executionContext?: {
+    contextId: string;
+    rawGoalHash: string;
+    classificationTimestamp: string;
+    priorContextUsed: boolean;
+    explicitTaskReference?: string;
+  };
   understanding?: {
     requestedAction: string;
     target?: string;

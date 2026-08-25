@@ -16,6 +16,11 @@ export interface AuditRecord {
   providerName?: string;
   resultCount?: number;
   lifecycleTransitions?: Array<{ state: string; timestamp: string; evidence?: string }>;
+  goalHash?: string;
+  classification?: string;
+  classificationTimestamp?: string;
+  priorContextUsed?: boolean;
+  explicitTaskReference?: string;
 }
 
 export function redactSensitive(error?: string): string | undefined {

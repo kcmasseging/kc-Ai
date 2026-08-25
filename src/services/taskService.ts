@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { checkCapability, listCapabilities } from './capabilityService';
 import { recordAudit } from './auditService';
 import { getStorage } from './storage';
@@ -9,7 +9,7 @@ import { redactSensitive } from './auditService';
 import { researchWeb } from './browserResearchService';
 import { fetchWebPage, WebFetchError } from './webFetchService';
 
-function inferCapability(goal: string): string {
+export function classifyGoal(goal: string): string {
   const normalized = goal.toLowerCase();
   if (/\b(fetch|read|open|retrieve)\b/.test(normalized) && /https?:\/\/\S+/.test(normalized)) return 'web.fetch/read';
   if (/\b(send|sending|email|e-mail)\b/.test(normalized) && /\b(email|e-mail)\b/.test(normalized)) return 'email.send';
@@ -23,6 +23,40 @@ function inferCapability(goal: string): string {
   if (/\b(api|webhook|external service|third-party|third party|integration)\b/.test(normalized)) return 'external-api.action';
   if (normalized.includes('database') || normalized.includes('product data')) return 'kc-product-data';
   return 'task.orchestration';
+}
+
+function capabilityMatchesGoal(goal: string, capability: string): boolean {
+  const normalized = goal.toLowerCase();
+  const requirements: Record<string, RegExp> = {
+    'web.fetch/read': /\b(fetch|read|open|retrieve)\b.*https?:\/\/\S+|https?:\/\/\S+.*\b(fetch|read|open|retrieve)\b/i,
+    'email.send': /\b(send|sending|email|e-mail)\b.*\b(email|e-mail)\b/i,
+    'message.send': /\b(send|sending|message|messaging|text|sms|notify|notification)\b/i,
+    'payment.transfer': /\b(pay|payment|payments|transfer|transfers|wire|refund|purchase|charge)\b/i,
+    'deployment.execute': /\b(deploy|deployment|publish|publishing|release|ship)\b/i,
+    'file.delete': /\b(delete|deletion|remove|removal|erase|destroy)\b.*\b(file|files|folder|folders|record|records|data)\b/i,
+    'web.search': /\b(search|browse|look up|lookup)\b.*\b(web|internet|online)\b|\b(web|internet|online)\b.*\b(search|browse|look up|lookup)\b/i,
+    'owner.private-build': /\b(private build|private development|staging build)\b/i,
+    'account.changes': /\b(change|update|modify|edit|create|close|delete|reset)\b.*\b(account|profile|password|subscription|settings|permissions|user)\b/i,
+    'external-api.action': /\b(api|webhook|external service|third-party|third party|integration)\b/i,
+    'kc-product-data': /database|product data/i,
+  };
+  return capability === 'task.orchestration' || Boolean(requirements[capability]?.test(normalized));
+}
+
+function classifyCurrentGoal(goal: string): string {
+  const capability = classifyGoal(goal);
+  return capabilityMatchesGoal(goal, capability) ? capability : 'task.orchestration';
+}
+
+function goalHash(goal: string): string {
+  return createHash('sha256').update(goal).digest('hex');
+}
+
+function explicitTaskReference(goal: string, continuationTaskId?: string): string | undefined {
+  if (!continuationTaskId) return undefined;
+  return /\b(continue|retry)\b.*\b(previous|prior|that)(?:\s+\w+){0,3}\s+task\b|\bcontinue\s+from\s+task\b/i.test(goal)
+    ? continuationTaskId
+    : undefined;
 }
 
 function understand(goal: string, capability: string): TaskRecord['understanding'] {
@@ -84,11 +118,20 @@ export async function createAndAdvanceTask(input: {
   verifyInternal?: (evidence: string) => Promise<string | undefined> | string | undefined;
   searchProvider?: SearchProvider;
   fetchPage?: (url: string) => ReturnType<typeof fetchWebPage>;
+  continuationTaskId?: string;
 }): Promise<TaskRecord> {
+  const rawGoal = input.goal;
+  const normalizedGoal = rawGoal.trim();
   const now = new Date().toISOString();
+  const reference = explicitTaskReference(normalizedGoal, input.continuationTaskId);
+  const referencedTask = reference ? await getStorage().getTask(reference) : undefined;
+  const referencedCapability = referencedTask?.requiredCapability;
+  const contextId = `context_${randomUUID()}`;
+  const rawGoalHash = goalHash(rawGoal);
+  const executionContext: TaskRecord['executionContext'] = { contextId, rawGoalHash, classificationTimestamp: now, priorContextUsed: Boolean(reference), explicitTaskReference: reference };
   const task: TaskRecord = {
     taskId: `task_${randomUUID()}`,
-    goal: input.goal.trim(),
+    goal: normalizedGoal,
     privateBuildId: input.privateBuildId,
     appContext: input.appId || input.appName ? { appId: input.appId, appName: input.appName } : undefined,
     status: 'created',
@@ -96,12 +139,15 @@ export async function createAndAdvanceTask(input: {
     updatedAt: now,
     progress: ['Task created.'],
     verificationStatus: 'not-verified',
+    executionContext,
   };
   await getStorage().createTask(task);
-  await recordAudit({ actionType: 'task.received', taskId: task.taskId, actorRole: input.actorRole || 'user', outcome: 'started', verificationStatus: 'not-verified' });
+  await recordAudit({ actionType: 'task.received', taskId: task.taskId, actorRole: input.actorRole || 'user', outcome: 'started', verificationStatus: 'not-verified', goalHash: rawGoalHash, priorContextUsed: Boolean(reference), explicitTaskReference: reference });
 
-  task.requiredCapability = inferCapability(task.goal);
+  task.requiredCapability = referencedCapability && reference ? referencedCapability : classifyCurrentGoal(task.goal);
   task.understanding = understand(task.goal, task.requiredCapability);
+  executionContext.classificationTimestamp = new Date().toISOString();
+  await recordAudit({ actionType: 'task.classified', taskId: task.taskId, actorRole: input.actorRole || 'user', outcome: 'started', verificationStatus: 'not-verified', goalHash: rawGoalHash, classification: task.requiredCapability, classificationTimestamp: executionContext.classificationTimestamp, priorContextUsed: executionContext.priorContextUsed, explicitTaskReference: executionContext.explicitTaskReference, capabilityUsed: task.requiredCapability });
   task.status = 'classified';
   task.progress.push(`Classified as ${task.requiredCapability}.`);
   await getStorage().updateTask(task);

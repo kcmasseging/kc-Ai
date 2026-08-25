@@ -40,7 +40,7 @@ describe('KC AI owner acceptance', () => {
     expect(task.verificationStatus).toBe('verified');
     expect(task.result).toBeTruthy();
     expect(task.verificationResult).toBeTruthy();
-    expect((await listAuditRecords()).filter((record) => record.taskId === task.taskId).map((record) => record.actionType)).toEqual(['task.received', 'task.completed']);
+    expect((await listAuditRecords()).filter((record) => record.taskId === task.taskId).map((record) => record.actionType)).toEqual(['task.received', 'task.classified', 'task.completed']);
   });
 
   it('requires a verified owner and step-up for private build access', async () => {

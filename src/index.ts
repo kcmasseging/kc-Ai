@@ -290,6 +290,7 @@ app.post('/api/v1/tasks', async (req: Request, res: Response) => {
     appId: req.body.appId,
     appName: req.body.appName,
     actorRole: ownerClaims(req) ? 'owner' : 'user',
+    continuationTaskId: typeof req.body.continuationTaskId === 'string' ? req.body.continuationTaskId : undefined,
   });
   res.status(task.status === 'blocked' ? 409 : 201).json({ task });
 });
