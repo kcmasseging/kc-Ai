@@ -128,9 +128,9 @@ describe('KC AI owner acceptance', () => {
     expect((html.match(/id="login-form"/g) || [])).toHaveLength(1);
     expect((html.match(/id="voice-toggle"/g) || [])).toHaveLength(1);
     expect((html.match(/>Voice</g) || [])).toHaveLength(1);
-    expect(app).toContain("state.token=data.sessionToken;sessionStorage.setItem('kcOwnerToken',state.token);setSession();show('settings')");
-    expect(app).toContain("async function restoreOwnerSession(){if(!state.token){setSession();show('home');return}");
-    expect(app).toContain("await api('/api/v1/owner/secret-bus/status');setSession();show('settings')");
+    expect(app).toContain("state.token=data.sessionToken;state.authReady=true;sessionStorage.setItem('kcOwnerToken',state.token);setSession();show('settings');await refreshOwnerData()");
+    expect(app).toContain("async function restoreOwnerSession(){if(!state.token){settleOwnerBoard('Unavailable');setSession();show('home');return}");
+    expect(app).toContain("await api('/api/v1/owner/secret-bus/status');state.authReady=true;setSession();show('settings');await refreshOwnerData()");
     expect(app).toContain("if(error.status===401){clearOwnerSession();show('home')}");
     expect(app).toContain("if(response.status===401&&state.token)clearOwnerSession()");
     expect(app).toContain("document.body.classList.add('auth-pending')");
