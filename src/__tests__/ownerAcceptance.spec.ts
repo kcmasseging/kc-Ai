@@ -115,7 +115,7 @@ describe('KC AI owner acceptance', () => {
     expect(app).toContain('<strong>RESULT</strong>');
     expect(app).toContain('<strong>VERIFICATION</strong>');
     expect(app).toContain('Search provider configuration required');
-    expect(styles).toContain('body.owner-mode{--owner-bg:#062b8f');
+    expect(styles).toContain('body.owner-mode{--owner-bg:#020b25');
     expect(styles).toContain('@media(max-width:760px)');
     expect(styles).toContain('.browser-grid{grid-template-columns:1fr}');
   });
@@ -141,5 +141,29 @@ describe('KC AI owner acceptance', () => {
     expect(html).toContain('data-view="capabilities">Capabilities');
     expect(html).toContain('data-view="settings">Settings');
     expect(readFileSync('public/styles.css', 'utf8')).toContain('body.auth-pending .topbar,body.auth-pending .shell,body.auth-pending footer');
+  });
+
+  it('defines the authenticated Owner Board without changing the public shell', () => {
+    const html = readFileSync('public/index.html', 'utf8');
+    const app = readFileSync('public/app.js', 'utf8');
+    const styles = readFileSync('public/styles.css', 'utf8');
+
+    expect(html).toContain('class="owner-board-home"');
+    expect(html).toContain('Hi Kelvin,<br>what should we<br><span>work on today?</span>');
+    expect(html).toContain('Message KC AI...');
+    expect(html).toContain('id="owner-ask"');
+    expect(html).toContain('id="board-capability-count"');
+    expect(html).toContain('id="board-task-count"');
+    expect(html).toContain('id="board-verification-status"');
+    expect(html).toContain('id="board-browser-status"');
+    expect(app).toContain("$('board-capability-count').textContent=String(available.length)");
+    expect(app).toContain("$('board-task-count').textContent=data.tasks.length?`${data.tasks.length} total`:'None yet'");
+    expect(app).toContain("$('board-browser-status').textContent=configured?'Ready':'Needs setup'");
+    expect(app).toContain("$('owner-ask').onclick=()=>{show('home');$('chat-input').focus()}");
+    expect(styles).toContain('body.owner-mode .hero{display:none}');
+    expect(styles).toContain('body.owner-mode .tabs{position:fixed');
+    expect(styles).toContain('background:radial-gradient(ellipse at 72% 25%');
+    expect(styles).toContain('.quick-actions{grid-template-columns:repeat(2,minmax(0,1fr))}');
+    expect(styles).toContain('.owner-mode .chat-form{padding:18px 20px;background:#fff');
   });
 });
