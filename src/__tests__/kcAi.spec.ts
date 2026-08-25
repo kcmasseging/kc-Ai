@@ -3,7 +3,7 @@ import { createHealthResponse } from '../services/healthService';
 import { createWelcomeMessage } from '../services/welcomeService';
 import { checkCapability } from '../services/capabilityService';
 import { createAndAdvanceTask } from '../services/taskService';
-import { getTask, reloadTasks } from '../services/taskService';
+import { getTask, listTaskHistory, reloadTasks } from '../services/taskService';
 import { SecretBus } from '../services/secretBusService';
 import { verifyOwnerToken } from '../services/ownerModeService';
 import { authenticateOwner, hashPassword, issueStepUpToken, logoutOwner, verifyOwnerSession, verifyStepUpToken, verifyStepUpTokenForSession } from '../services/authService';
@@ -79,7 +79,19 @@ describe('KC AI foundation', () => {
 
     expect(task.status).toBe('completed');
     expect(task.verificationStatus).toBe('verified');
-    expect(task.progress).toContain('Task completed: no external side effect was requested.');
+    expect(task.result).toContain('KC AI completed internal processing');
+    expect(task.result).not.toContain('no external side effect');
+    expect(task.verificationResult).toBeTruthy();
+  });
+
+  it('generates and persists a truthful KC AI service status result in Task History', async () => {
+    const task = await createAndAdvanceTask({ goal: 'Analyze the current KC AI service status and create a short internal summary of what is working.' });
+
+    expect(task.status).toBe('completed');
+    expect(task.result).toContain('KC AI service status: ok');
+    expect(task.result).toContain('Available capabilities:');
+    expect(task.verificationResult).toContain('Verified');
+    expect((await listTaskHistory(task.taskId)).at(-1)?.task).toMatchObject({ result: task.result, verificationResult: task.verificationResult, status: 'completed' });
   });
 
   it('encrypts Secret Bus values and reports missing key material', () => {

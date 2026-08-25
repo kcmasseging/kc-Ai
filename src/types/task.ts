@@ -51,6 +51,7 @@ export interface TaskRecord {
     validationRequirement: string;
   };
   executionEvidence?: string;
+  result?: string;
   verificationResult?: string;
   finalResult?: string;
 }

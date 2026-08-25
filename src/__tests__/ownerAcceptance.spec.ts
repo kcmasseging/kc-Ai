@@ -38,7 +38,8 @@ describe('KC AI owner acceptance', () => {
     const task = await createAndAdvanceTask({ goal: 'prepare a harmless owner acceptance checklist', actorRole: 'owner' });
     expect(task.status).toBe('completed');
     expect(task.verificationStatus).toBe('verified');
-    expect(task.progress).toContain('Task completed: no external side effect was requested.');
+    expect(task.result).toBeTruthy();
+    expect(task.verificationResult).toBeTruthy();
     expect((await listAuditRecords()).filter((record) => record.taskId === task.taskId).map((record) => record.actionType)).toEqual(['task.received', 'task.completed']);
   });
 

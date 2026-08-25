@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto';
-import { checkCapability } from './capabilityService';
+import { checkCapability, listCapabilities } from './capabilityService';
 import { recordAudit } from './auditService';
 import { getStorage } from './storage';
+import { createHealthResponse } from './healthService';
 import type { TaskRecord } from '../types/task';
 
 function inferCapability(goal: string): string {
@@ -27,6 +28,18 @@ function understand(goal: string, capability: string): TaskRecord['understanding
     parameters: { goal },
     externalSideEffect: capability !== 'task.orchestration' && !capability.startsWith('internal.'),
   };
+}
+
+function generateInternalResult(goal: string): string {
+  const normalized = goal.toLowerCase();
+  if (/(service|system|kc ai).*(status|health|working)|status.*(service|system|kc ai)/.test(normalized)) {
+    const health = createHealthResponse(process.env.NODE_ENV || 'development');
+    const capabilities = listCapabilities();
+    const available = capabilities.filter((capability) => capability.status === 'available').map((capability) => capability.id);
+    const unavailable = capabilities.filter((capability) => capability.status !== 'available').map((capability) => `${capability.id} (${capability.status})`);
+    return `KC AI service status: ${health.status} (${health.service} ${health.version}, ${health.environment}). Available capabilities: ${available.join(', ')}. Unavailable or unimplemented capabilities: ${unavailable.join(', ')}.`;
+  }
+  return `KC AI completed internal processing for the supplied goal. No connected product data or external system evidence was supplied, so this result makes no claims beyond that internal processing occurred.`;
 }
 
 export async function createAndAdvanceTask(input: {
@@ -97,9 +110,10 @@ export async function createAndAdvanceTask(input: {
   task.status = 'executing';
   task.progress.push('Internal task execution started.');
   try {
-    task.executionEvidence = input.executeInternal
+    task.result = input.executeInternal
       ? await input.executeInternal()
-      : 'Internal task state and supplied goal were processed by KC AI.';
+      : generateInternalResult(task.goal);
+    task.executionEvidence = task.result;
   } catch (error) {
     task.status = 'failed';
     task.lastError = error instanceof Error ? error.message : 'Internal task execution failed';
@@ -132,7 +146,7 @@ export async function createAndAdvanceTask(input: {
   }
   task.status = 'completed';
   task.verificationStatus = 'verified';
-  task.finalResult = 'Task completed: no external side effect was requested.';
+  task.finalResult = task.result!;
   task.progress.push(task.finalResult);
   task.lastSuccessfulStep = task.finalResult;
   task.updatedAt = new Date().toISOString();

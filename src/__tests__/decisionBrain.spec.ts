@@ -12,6 +12,7 @@ describe('KC AI decision and execution brain', () => {
     expect(task.understanding?.externalSideEffect).toBe(false);
     expect(task.executionPlan).toMatchObject({ taskId: task.taskId, requiredCapability: 'task.orchestration' });
     expect(task.executionEvidence).toBeTruthy();
+    expect(task.result).toContain('KC AI completed internal processing');
     expect(task.verificationResult).toBeTruthy();
     expect((await listAuditRecords()).find((record) => record.taskId === task.taskId && record.outcome === 'completed')?.lifecycleTransitions?.map((entry) => entry.state)).toEqual([
       'created', 'classified', 'planned', 'executing', 'verifying', 'completed',
@@ -55,6 +56,7 @@ describe('KC AI decision and execution brain', () => {
     expect(task.status).toBe('failed');
     expect(task.verificationStatus).toBe('not-verified');
     expect(task.finalResult).toBeUndefined();
+    expect(task.result).toBeUndefined();
     expect(task.lastError).toContain('verifiable evidence');
   });
 
