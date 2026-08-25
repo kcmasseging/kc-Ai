@@ -43,24 +43,44 @@ function isPrivateAddress(address: string): boolean {
   return isPrivateIpv4(address) || (isIP(address) === 6 && isPrivateIpv6(address));
 }
 
-export function extractReadableContent(content: string, contentType: string): { title: string; readableText: string; summary: string } {
-  if (contentType === 'text/plain') {
-    const readableText = content.replace(/\s+/g, ' ').trim();
-    return { title: 'Untitled page', readableText, summary: readableText.slice(0, 600) };
-  }
-  const title = content.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1]?.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim() || 'Untitled page';
-  const readableText = content
-    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
-    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
-    .replace(/<noscript[\s\S]*?<\/noscript>/gi, ' ')
-    .replace(/<[^>]+>/g, ' ')
+function decodeHtmlEntities(value: string): string {
+  return value
     .replace(/&nbsp;/gi, ' ')
     .replace(/&amp;/gi, '&')
     .replace(/&lt;/gi, '<')
     .replace(/&gt;/gi, '>')
+    .replace(/&#39;|&apos;/gi, "'")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#(\d+);/g, (_, code: string) => String.fromCodePoint(Number(code)))
+    .replace(/&#x([\da-f]+);/gi, (_, code: string) => String.fromCodePoint(parseInt(code, 16)));
+}
+
+function conciseSummary(readableText: string): string {
+  if (readableText.length <= 600) return readableText;
+  const boundary = readableText.slice(0, 600).search(/[.!?](?:\s|$)[^.!?]*$/);
+  return readableText.slice(0, boundary > 0 ? boundary + 1 : 600).trim();
+}
+
+export function extractReadableContent(content: string, contentType: string): { title: string; readableText: string; summary: string } {
+  if (contentType === 'text/plain') {
+    const readableText = content.replace(/\s+/g, ' ').trim();
+    return { title: 'Untitled page', readableText, summary: conciseSummary(readableText) };
+  }
+  const title = decodeHtmlEntities(content.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1]?.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim() || 'Untitled page');
+  const readableText = content
+    .replace(/<!--[\s\S]*?-->/g, ' ')
+    .replace(/<head[\s\S]*?<\/head>/gi, ' ')
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<noscript[\s\S]*?<\/noscript>/gi, ' ')
+    .replace(/<(?:nav|menu|header|footer|aside|form|dialog|template|svg|canvas)\b[^>]*>[\s\S]*?<\/(?:nav|menu|header|footer|aside|form|dialog|template|svg|canvas)>/gi, ' ')
+    .replace(/<[^>]+(?:role\s*=\s*["']?(?:navigation|banner|contentinfo|complementary|search|dialog)|(?:id|class)\s*=\s*["'][^"']*(?:nav|menu|footer|header|sidebar|cookie|banner)[^"']*["'])[^>]*>[\s\S]*?<\/[^>]+>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s*([.!?])\s*/g, '$1 ')
+    .replace(/&(?:nbsp|amp|lt|gt|#39|apos|quot);|&#x?[\da-f]+;/gi, (entity) => decodeHtmlEntities(entity))
     .replace(/\s+/g, ' ')
     .trim();
-  return { title, readableText, summary: readableText.slice(0, 600) };
+  return { title: title.trim() || 'Untitled page', readableText, summary: conciseSummary(readableText) };
 }
 
 export function validateFetchUrl(input: string): URL {

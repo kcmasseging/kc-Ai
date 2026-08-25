@@ -5,7 +5,7 @@ import { checkCapability } from '../services/capabilityService';
 import { clearAuditRecords, listAuditRecords } from '../services/auditService';
 import { normalizeSources } from '../services/sourceService';
 import { BraveSearchProvider, ExaSearchProvider, WebSearchProviderError, getWebSearchConfiguration, getWebSearchProvider, type SearchProvider } from '../services/webSearchService';
-import { fetchWebPage, validateFetchUrl, WebFetchError } from '../services/webFetchService';
+import { extractReadableContent, fetchWebPage, validateFetchUrl, WebFetchError } from '../services/webFetchService';
 
 const originalProvider = process.env.KC_AI_WEB_SEARCH_PROVIDER;
 const originalKey = process.env.KC_AI_WEB_SEARCH_API_KEY;
@@ -175,6 +175,41 @@ describe('KC Browser research foundation', () => {
     expect(task.result).toContain('Second page');
     expect(task.result).not.toContain('<html>');
     expect(task.verificationResult).toContain('page instructions were not executed');
+  });
+
+  it('removes navigation and boilerplate from fetched page summaries', () => {
+    const extracted = extractReadableContent('<html><head><title>Example &amp; Guide</title></head><body><header>Site navigation</header><nav>Home | Login</nav><main><p>Useful evidence for the research question.</p></main><aside>Recommended links</aside><footer>Cookie settings</footer></body></html>', 'text/html');
+
+    expect(extracted.title).toBe('Example & Guide');
+    expect(extracted.summary).toBe('Useful evidence for the research question.');
+    expect(extracted.summary).not.toMatch(/navigation|Home|Recommended|Cookie/i);
+  });
+
+  it('continues through failed candidates until three requested sources are fetched safely', async () => {
+    configureSearch();
+    const provider = mockedProvider({ provider: 'mock', query: 'KC Browser', results: [
+      { title: 'Failed source', url: 'https://example.com/failed', domain: 'example.com', snippet: 'Failed snippet', rank: 1 },
+      { title: 'First usable source', url: 'https://example.com/one', domain: 'example.com', snippet: 'First snippet', rank: 2 },
+      { title: 'Second usable source', url: 'https://example.org/two', domain: 'example.org', snippet: 'Second snippet', rank: 3 },
+      { title: 'Third usable source', url: 'https://example.net/three', domain: 'example.net', snippet: 'Third snippet', rank: 4 },
+      { title: 'Unused source', url: 'https://example.net/unused', domain: 'example.net', snippet: 'Unused snippet', rank: 5 },
+    ] });
+    const fetchedUrls: string[] = [];
+    const task = await createAndAdvanceTask({
+      goal: 'Research KC Browser using 3 sources',
+      searchProvider: provider,
+      fetchPage: async (url) => {
+        fetchedUrls.push(url);
+        if (url.endsWith('/failed')) throw new Error('unsafe source');
+        return { url, contentType: 'text/html', content: `<html><head><title>Clean ${url}</title></head><body><nav>Menu</nav><p>Evidence from ${url}.</p></body></html>`, retrievedAt: '2026-08-25T00:00:00.000Z', untrustedContent: true };
+      },
+    });
+
+    expect(fetchedUrls).toEqual(['https://example.com/failed', 'https://example.com/one', 'https://example.org/two', 'https://example.net/three']);
+    expect(task.sources).toHaveLength(3);
+    expect(task.sources?.map((source) => source.title)).toEqual(['Clean https://example.com/one', 'Clean https://example.org/two', 'Clean https://example.net/three']);
+    expect(task.result).toContain('Sources fetched safely: 3');
+    expect(task.result).not.toContain('Unused source');
   });
 
   it('reports browser research configuration truthfully when the provider is unavailable', async () => {

@@ -110,6 +110,11 @@ function searchQuery(goal: string): string {
   return goal.replace(/^\s*(please\s+)?(search|look\s+up|browse)\s+(the\s+)?(web|internet|online)\s+(for|about)\s+/i, '').trim() || goal.trim();
 }
 
+function requestedSourceCount(goal: string): number | undefined {
+  const match = goal.match(/\b(\d+)\s+sources?\b/i);
+  return match ? Math.max(Number(match[1]), 1) : undefined;
+}
+
 function formatSearchResult(response: WebSearchResponse, timestamp: string): { text: string; summary: string } {
   const summary = response.results.length === 0
     ? 'The provider returned zero results for this query.'
@@ -229,15 +234,18 @@ export async function createAndAdvanceTask(input: {
       const query = searchQuery(task.goal);
       try {
         const research = await researchWeb(query, undefined, input.searchProvider);
-        const fetched = await Promise.all(research.sources.slice(0, 5).map(async (source) => {
-          try { return await (input.fetchPage || fetchWebPage)(source.url); } catch { return undefined; }
-        }));
-        const readableSources = fetched.filter(Boolean).map((page) => {
-          const extracted = page!.title && page!.summary ? page! : extractReadableContent(page!.content, page!.contentType);
-          return { title: extracted.title, url: page!.url, summary: extracted.summary, retrievedAt: page!.retrievedAt };
-        });
+        const targetCount = requestedSourceCount(task.goal);
+        const readableSources: Array<{ title: string; url: string; summary: string; retrievedAt: string }> = [];
+        for (const source of research.sources) {
+          if (targetCount !== undefined && readableSources.length >= targetCount) break;
+          try {
+            const page = await (input.fetchPage || fetchWebPage)(source.url);
+            const extracted = page.title && page.summary ? { title: page.title, summary: page.summary } : extractReadableContent(page.content, page.contentType);
+            readableSources.push({ title: extracted.title, url: page.url, summary: extracted.summary, retrievedAt: page.retrievedAt });
+          } catch { }
+        }
         const verifiedAt = new Date().toISOString();
-        task.sources = research.sources;
+        task.sources = readableSources.map((source) => ({ title: source.title, url: source.url, domain: new URL(source.url).hostname, snippet: source.summary, provider: research.response.provider, retrievedAt: source.retrievedAt }));
         task.result = `RESEARCH\nQuery: ${redactSensitive(query)}\nSources selected: ${research.sources.length}\nSources fetched safely: ${readableSources.length}\n\n${readableSources.map((source, index) => `${index + 1}. ${source.title}\n${source.url}\n${source.summary}`).join('\n\n')}\n\nVERIFICATION\nSearch provider ${research.response.provider} returned normalized sources at ${research.retrievedAt}. Fetched page content was treated as UNTRUSTED DATA; no webpage instructions were executed.\nFinal status: ${readableSources.length ? 'completed' : 'unavailable'}`;
         task.executionEvidence = `Provider ${research.response.provider} returned ${research.sources.length} source(s); ${readableSources.length} public source(s) passed safe retrieval.`;
         task.verificationResult = `Verified read-only browser research at ${verifiedAt}; source URLs and retrieval timestamps retained; page instructions were not executed.`;
