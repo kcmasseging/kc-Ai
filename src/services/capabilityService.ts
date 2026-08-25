@@ -1,4 +1,5 @@
 import type { CapabilityStatus } from '../types/task';
+import { getWebSearchConfiguration } from './webSearchService';
 
 export interface Capability {
   id: string;
@@ -31,25 +32,33 @@ const capabilities: Capability[] = [
   { id: 'file.deletion', description: 'Delete files in an external or persistent system', status: 'planned', reason: 'No file-deletion integration is implemented' },
   { id: 'file.delete', description: 'Delete files in an external or persistent system', status: 'planned', reason: 'No file-deletion integration is implemented' },
   { id: 'external-api.action', description: 'Perform an action through an external API', status: 'planned', reason: 'No external API integration is implemented' },
-  { id: 'web.search', description: 'Search the web through an external provider', status: 'planned', reason: 'No web search integration is implemented' },
   { id: 'browser.action', description: 'Perform an action in an external browser session', status: 'planned', reason: 'No browser action integration is implemented' },
   { id: 'owner.private-build', description: 'Owner-only private development and staging lifecycle', status: 'available', requiresOwner: true },
 ];
 
 export function listCapabilities(): Capability[] {
-  return capabilities.map((capability) => ({ ...capability }));
+  return capabilities.map((capability) => capability.id === 'web.search' ? webSearchCapability() : ({ ...capability }));
 }
 
 export function getCapability(id: string): Capability | undefined {
+  if (id === 'web.search') return webSearchCapability();
   const capability = capabilities.find((entry) => entry.id === id);
   return capability ? { ...capability } : undefined;
 }
 
 export function checkCapability(id: string): Capability {
+  if (id === 'web.search') return webSearchCapability();
   return getCapability(id) ?? {
     id,
     description: 'Unknown capability',
     status: 'planned',
     reason: 'This capability is not registered',
   };
+}
+
+function webSearchCapability(): Capability {
+  const configuration = getWebSearchConfiguration();
+  return configuration.configured
+    ? { id: 'web.search', description: 'Search the web through an external provider', status: 'available', reason: 'Configured provider credentials are present; availability is confirmed per search response' }
+    : { id: 'web.search', description: 'Search the web through an external provider', status: 'credentials-required', reason: configuration.reason };
 }

@@ -54,4 +54,10 @@ export interface TaskRecord {
   result?: string;
   verificationResult?: string;
   finalResult?: string;
+  webSearch?: {
+    query: string;
+    provider: string;
+    results: Array<{ title: string; domain: string; url: string; snippet: string; rank: number }>;
+    summary: string;
+  };
 }

@@ -12,16 +12,19 @@ export interface AuditRecord {
   error?: string;
   capabilityUsed?: string;
   verificationResult?: string;
+  query?: string;
+  providerName?: string;
+  resultCount?: number;
   lifecycleTransitions?: Array<{ state: string; timestamp: string; evidence?: string }>;
 }
 
-function safeError(error?: string): string | undefined {
+export function redactSensitive(error?: string): string | undefined {
   if (!error) return undefined;
   return error.replace(/(password|token|secret|api[-_ ]?key|credential)\s*[:=]\s*[^\s,;]+/gi, '$1=[REDACTED]');
 }
 
 export async function recordAudit(input: Omit<AuditRecord, 'timestamp' | 'error'> & { error?: string }): Promise<AuditRecord> {
-  const record: AuditRecord = { ...input, timestamp: new Date().toISOString(), error: safeError(input.error) };
+  const record: AuditRecord = { ...input, query: redactSensitive(input.query), timestamp: new Date().toISOString(), error: redactSensitive(input.error), verificationResult: redactSensitive(input.verificationResult) };
   return getStorage().appendAudit(record);
 }
 

@@ -26,6 +26,9 @@ const envSchema = z.object({
   KC_AI_TTS_VOICE: z.string().default('en-US-JennyNeural'),
   KC_AI_ENABLE_VOICE: z.coerce.boolean().default(true),
   KC_AI_ENABLE_WELCOME: z.coerce.boolean().default(true),
+  KC_AI_WEB_SEARCH_PROVIDER: z.enum(['brave']).optional(),
+  KC_AI_WEB_SEARCH_API_KEY: z.string().min(1).optional(),
+  KC_AI_WEB_SEARCH_ENDPOINT: z.string().url().optional(),
 });
 
 export const env = envSchema.parse(process.env);

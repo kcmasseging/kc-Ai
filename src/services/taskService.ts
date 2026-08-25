@@ -4,6 +4,8 @@ import { recordAudit } from './auditService';
 import { getStorage } from './storage';
 import { createHealthResponse } from './healthService';
 import type { TaskRecord } from '../types/task';
+import { getWebSearchProvider, WebSearchProviderError, type WebSearchResponse } from './webSearchService';
+import { redactSensitive } from './auditService';
 
 function inferCapability(goal: string): string {
   const normalized = goal.toLowerCase();
@@ -50,6 +52,23 @@ function generateBlockedResult(capability: string, reason: string): string {
     ? 'No email provider integration is implemented.'
     : 'No external action was executed.';
   return `BLOCKED\nRequired capability: ${capability}\nReason: ${reason}\n${integration}\nExternal action executed: no.\nRequired to enable: ${enablement}\nVerification status: not-verified.`;
+}
+
+function searchQuery(goal: string): string {
+  return goal.replace(/^\s*(please\s+)?(search|look\s+up|browse)\s+(the\s+)?(web|internet|online)\s+(for|about)\s+/i, '').trim() || goal.trim();
+}
+
+function formatSearchResult(response: WebSearchResponse, timestamp: string): { text: string; summary: string } {
+  const summary = response.results.length === 0
+    ? 'The provider returned zero results for this query.'
+    : response.results.slice(0, 3).map((result) => `${result.title}: ${result.snippet}`).join(' ');
+  const results = response.results.length === 0
+    ? 'No results returned.'
+    : response.results.map((result) => `${result.rank}. ${result.title} [${result.domain}]\nURL: ${result.url}\n${result.snippet}`).join('\n');
+  return {
+    summary,
+    text: `QUERY\n${redactSensitive(response.query)}\n\nRESULTS\n${redactSensitive(results)}\n\nSUMMARY\n${redactSensitive(summary)}\n\nVERIFICATION\nProvider ${response.provider} returned ${response.results.length} normalized result(s) at ${timestamp}.\n\nFINAL STATUS\ncompleted`,
+  };
 }
 
 export async function createAndAdvanceTask(input: {
@@ -108,6 +127,39 @@ export async function createAndAdvanceTask(input: {
   }
 
   if (task.requiredCapability !== 'task.orchestration') {
+    if (task.requiredCapability === 'web.search') {
+      task.status = 'executing';
+      task.progress.push('Read-only web search execution started.');
+      const query = searchQuery(task.goal);
+      try {
+        const response = await getWebSearchProvider().search(query);
+        const verifiedAt = new Date().toISOString();
+        const formatted = formatSearchResult(response, verifiedAt);
+        task.webSearch = { query: response.query, provider: response.provider, results: response.results, summary: formatted.summary };
+        task.result = formatted.text;
+        task.executionEvidence = `Provider ${response.provider} returned a valid response with ${response.results.length} normalized result(s).`;
+        task.verificationResult = `Verified provider response from ${response.provider}; result count ${response.results.length}; timestamp ${verifiedAt}.`;
+        task.status = 'completed';
+        task.verificationStatus = 'verified';
+        task.finalResult = task.result;
+        task.progress.push(task.finalResult);
+        task.lastSuccessfulStep = task.finalResult;
+        task.updatedAt = verifiedAt;
+        await getStorage().updateTask(task);
+        await recordAudit({ actionType: 'task.completed', taskId: task.taskId, actorRole: input.actorRole || 'user', outcome: 'completed', verificationStatus: 'verified', capabilityUsed: 'web.search', query: response.query, providerName: response.provider, resultCount: response.results.length, verificationResult: task.verificationResult, lifecycleTransitions: [
+          { state: 'created', timestamp: task.createdAt }, { state: 'classified', timestamp: verifiedAt, evidence: 'web.search' }, { state: 'planned', timestamp: verifiedAt, evidence: task.executionPlan.validationRequirement }, { state: 'executing', timestamp: verifiedAt, evidence: task.executionEvidence }, { state: 'verifying', timestamp: verifiedAt, evidence: task.verificationResult }, { state: 'completed', timestamp: verifiedAt, evidence: task.finalResult },
+        ] });
+        return { ...task, progress: [...task.progress] };
+      } catch (error) {
+        task.status = 'failed';
+        task.lastError = error instanceof WebSearchProviderError ? error.message : 'Web search provider failed unexpectedly';
+        task.progress.push(`Failed: ${task.lastError}.`);
+        task.updatedAt = new Date().toISOString();
+        await getStorage().updateTask(task);
+        await recordAudit({ actionType: 'task.failed', taskId: task.taskId, actorRole: input.actorRole || 'user', outcome: 'failed', verificationStatus: 'not-verified', error: task.lastError, capabilityUsed: 'web.search', query, providerName: process.env.KC_AI_WEB_SEARCH_PROVIDER || 'unknown', resultCount: 0 });
+        return { ...task, progress: [...task.progress] };
+      }
+    }
     task.status = 'blocked';
     task.blockedReason = 'Capability is registered but has no executable adapter';
     task.result = generateBlockedResult(task.requiredCapability, task.blockedReason);

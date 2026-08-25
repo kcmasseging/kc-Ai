@@ -158,7 +158,7 @@ export class LocalStorage implements Storage {
   }
 
   private copyTask(task: TaskRecord): TaskRecord {
-    return { ...task, progress: [...task.progress], appContext: task.appContext ? { ...task.appContext } : undefined };
+    return { ...task, progress: [...task.progress], appContext: task.appContext ? { ...task.appContext } : undefined, webSearch: task.webSearch ? { ...task.webSearch, results: task.webSearch.results.map((result) => ({ ...result })) } : undefined };
   }
 
   private copyWallet(wallet: WalletState): WalletState {
