@@ -97,4 +97,26 @@ describe('KC AI owner acceptance', () => {
     expect(railwayConfig).toContain('startCommand = "npm start"');
     expect(railwayConfig).not.toContain('KC_AI_OWNER_PASSWORD_HASH');
   });
+
+  it('keeps the public shell distinct from the authenticated owner workspace', () => {
+    const html = readFileSync('public/index.html', 'utf8');
+    const app = readFileSync('public/app.js', 'utf8');
+    const styles = readFileSync('public/styles.css', 'utf8');
+
+    expect(html).toContain('Central intelligence for the KC ecosystem');
+    expect(html).toContain('Owner Workspace');
+    expect(html).toContain('data-view="browser">KC Browser');
+    expect(html).toContain('id="browser-state"');
+    expect(html).toContain('id="voice-toggle"');
+    expect(html).toContain('id="voice-select"');
+    expect(html).toContain('id="voice-volume"');
+    expect(app).toContain("document.body.classList.toggle('owner-mode',Boolean(state.token))");
+    expect(app).toContain('loadBrowser()');
+    expect(app).toContain('<strong>RESULT</strong>');
+    expect(app).toContain('<strong>VERIFICATION</strong>');
+    expect(app).toContain('Search provider configuration required');
+    expect(styles).toContain('body.owner-mode{--owner-bg:#062b8f');
+    expect(styles).toContain('@media(max-width:760px)');
+    expect(styles).toContain('.browser-grid{grid-template-columns:1fr}');
+  });
 });
