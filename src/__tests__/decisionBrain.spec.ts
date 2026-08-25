@@ -31,6 +31,10 @@ describe('KC AI decision and execution brain', () => {
     expect(task.verificationStatus).toBe('not-verified');
     expect(task.executionEvidence).toBeUndefined();
     expect(task.blockedReason).toBeTruthy();
+    expect(task.result).toContain(`Required capability: ${requiredCapability}`);
+    expect(task.result).toContain(`Reason: ${task.blockedReason}`);
+    expect(task.result).toContain('External action executed: no.');
+    expect(task.result).toContain('Verification status: not-verified.');
   });
 
   it('does not allow a public request to activate an owner-only capability', async () => {
@@ -48,6 +52,7 @@ describe('KC AI decision and execution brain', () => {
     expect(task.status).toBe('blocked');
     expect(task.executionEvidence).toBeUndefined();
     expect(task.verificationStatus).toBe('not-verified');
+    expect(task.result).toContain('External action executed: no.');
   });
 
   it('cannot complete when execution produces no verifiable evidence', async () => {

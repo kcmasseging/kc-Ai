@@ -42,6 +42,16 @@ function generateInternalResult(goal: string): string {
   return `KC AI completed internal processing for the supplied goal. No connected product data or external system evidence was supplied, so this result makes no claims beyond that internal processing occurred.`;
 }
 
+function generateBlockedResult(capability: string, reason: string): string {
+  const enablement = capability === 'email.send'
+    ? 'A verified email provider integration plus required credentials/configuration must be added before email sending can be enabled.'
+    : `The ${capability} capability must be made available and any required integration, credentials, configuration, or authorization must be provided.`;
+  const integration = capability === 'email.send'
+    ? 'No email provider integration is implemented.'
+    : 'No external action was executed.';
+  return `BLOCKED\nRequired capability: ${capability}\nReason: ${reason}\n${integration}\nExternal action executed: no.\nRequired to enable: ${enablement}\nVerification status: not-verified.`;
+}
+
 export async function createAndAdvanceTask(input: {
   goal: string;
   privateBuildId?: string;
@@ -88,6 +98,7 @@ export async function createAndAdvanceTask(input: {
     task.blockedReason = capability.requiresOwner && input.actorRole !== 'owner'
       ? 'Owner authorization is required for this capability'
       : capability.reason || `Capability status: ${capability.status}`;
+    task.result = generateBlockedResult(task.requiredCapability, task.blockedReason);
     task.progress.push(`Blocked: ${task.blockedReason}.`);
     task.lastError = task.blockedReason;
     task.updatedAt = new Date().toISOString();
@@ -99,6 +110,7 @@ export async function createAndAdvanceTask(input: {
   if (task.requiredCapability !== 'task.orchestration') {
     task.status = 'blocked';
     task.blockedReason = 'Capability is registered but has no executable adapter';
+    task.result = generateBlockedResult(task.requiredCapability, task.blockedReason);
     task.lastError = task.blockedReason;
     task.progress.push(`Blocked: ${task.blockedReason}.`);
     task.updatedAt = new Date().toISOString();

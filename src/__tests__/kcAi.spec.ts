@@ -71,7 +71,23 @@ describe('KC AI foundation', () => {
     expect(task.verificationStatus).toBe('not-verified');
     expect(task.blockedReason).toBeTruthy();
     expect(task.blockedReason).not.toContain('no external side effect');
+    expect(task.result).toContain(`Required capability: ${task.requiredCapability}`);
+    expect(task.result).toContain(`Reason: ${task.blockedReason}`);
+    expect(task.result).toContain('External action executed: no.');
+    expect(task.result).toContain('Verification status: not-verified.');
     expect(task.progress.join(' ')).not.toContain('Task completed: no external side effect was requested.');
+  });
+
+  it('gives email blocking an explicit provider and enablement result', async () => {
+    const task = await createAndAdvanceTask({ goal: 'send an email to the owner' });
+
+    expect(task.status).toBe('blocked');
+    expect(task.result).toContain('Required capability: email.send');
+    expect(task.result).toContain('Reason: No email provider integration is implemented');
+    expect(task.result).toContain('No email provider integration is implemented.');
+    expect(task.result).toContain('External action executed: no.');
+    expect(task.result).toContain('A verified email provider integration plus required credentials/configuration must be added');
+    expect(task.result).toContain('Verification status: not-verified.');
   });
 
   it('still completes harmless internal work', async () => {
