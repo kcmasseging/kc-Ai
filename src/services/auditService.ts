@@ -10,6 +10,9 @@ export interface AuditRecord {
   outcome: AuditOutcome;
   verificationStatus: 'not-verified' | 'verified';
   error?: string;
+  capabilityUsed?: string;
+  verificationResult?: string;
+  lifecycleTransitions?: Array<{ state: string; timestamp: string; evidence?: string }>;
 }
 
 function safeError(error?: string): string | undefined {

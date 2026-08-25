@@ -1,7 +1,11 @@
 export type TaskStatus =
   | 'received'
+  | 'created'
+  | 'classified'
   | 'planning'
+  | 'planned'
   | 'executing'
+  | 'verifying'
   | 'validating'
   | 'blocked'
   | 'completed'
@@ -33,4 +37,20 @@ export interface TaskRecord {
   requiredCapability?: string;
   blockedReason?: string;
   verificationStatus: 'not-verified' | 'verified';
+  understanding?: {
+    requestedAction: string;
+    target?: string;
+    parameters: Record<string, string>;
+    externalSideEffect: boolean;
+  };
+  executionPlan?: {
+    taskId: string;
+    requiredCapability: string;
+    intendedAction: string;
+    expectedResult: string;
+    validationRequirement: string;
+  };
+  executionEvidence?: string;
+  verificationResult?: string;
+  finalResult?: string;
 }
