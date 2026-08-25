@@ -119,4 +119,27 @@ describe('KC AI owner acceptance', () => {
     expect(styles).toContain('@media(max-width:760px)');
     expect(styles).toContain('.browser-grid{grid-template-columns:1fr}');
   });
+
+  it('proves successful sign-in and reload restore the authenticated workspace', () => {
+    const html = readFileSync('public/index.html', 'utf8');
+    const app = readFileSync('public/app.js', 'utf8');
+
+    expect((html.match(/id="view-signin"/g) || [])).toHaveLength(1);
+    expect((html.match(/id="login-form"/g) || [])).toHaveLength(1);
+    expect((html.match(/id="voice-toggle"/g) || [])).toHaveLength(1);
+    expect((html.match(/>Voice</g) || [])).toHaveLength(1);
+    expect(app).toContain("state.token=data.sessionToken;sessionStorage.setItem('kcOwnerToken',state.token);setSession();show('settings')");
+    expect(app).toContain("async function restoreOwnerSession(){if(!state.token){setSession();show('home');return}");
+    expect(app).toContain("await api('/api/v1/owner/secret-bus/status');setSession();show('settings')");
+    expect(app).toContain("if(error.status===401){clearOwnerSession();show('home')}");
+    expect(app).toContain("if(response.status===401&&state.token)clearOwnerSession()");
+    expect(app).toContain("document.body.classList.add('auth-pending')");
+    expect(app).toContain("document.body.classList.remove('auth-pending')");
+    expect(app).toContain("document.body.classList.toggle('owner-mode',Boolean(state.token))");
+    expect(html).toContain('data-view="browser">KC Browser');
+    expect(html).toContain('data-view="tasks">Tasks');
+    expect(html).toContain('data-view="capabilities">Capabilities');
+    expect(html).toContain('data-view="settings">Settings');
+    expect(readFileSync('public/styles.css', 'utf8')).toContain('body.auth-pending .topbar,body.auth-pending .shell,body.auth-pending footer');
+  });
 });
