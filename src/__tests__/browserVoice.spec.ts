@@ -54,4 +54,28 @@ describe('KC AI browser voice playback', () => {
     await expect(voice.speak('muted response')).resolves.toEqual({ spoken: false, reason: 'muted' });
     expect(requests).toHaveLength(1);
   });
+
+  it('prefers a natural English voice, persists selection, and refreshes asynchronously', () => {
+    const voices = [{ name: 'Basic English', lang: 'en-US', voiceURI: 'basic' }, { name: 'Natural English', lang: 'en-US', voiceURI: 'natural' }, { name: 'French', lang: 'fr-FR', voiceURI: 'french' }];
+    const callbacks: string[] = [];
+    const storage = { value: '', getItem: () => storage.value, setItem: (_key: string, value: string) => { storage.value = value; } };
+    const synthesis = { getVoices: () => voices, addEventListener: (_event: string, callback: () => void) => callbacks.push(String(callback)), cancel: () => {}, speak: () => {} };
+    let changed: { voices: typeof voices; selected: string } | undefined;
+    const controller = createVoiceController({ speechSynthesis: synthesis, storage, onVoicesChanged: (available: typeof voices, selected: string) => { changed = { voices: available, selected }; } });
+
+    expect(controller.selectedVoice().name).toBe('Natural English');
+    expect(changed?.voices).toHaveLength(3);
+    expect(callbacks).toHaveLength(1);
+    expect(controller.selectVoice('basic')).toBe(true);
+    expect(storage.value).toBe('basic');
+    expect(controller.selectedVoice().name).toBe('Basic English');
+  });
+
+  it('falls back to the best available English voice when a saved voice disappears', () => {
+    const storage = { value: 'missing', getItem: () => storage.value, setItem: () => {} };
+    const synthesis = { getVoices: () => [{ name: 'English Natural', lang: 'en-GB', voiceURI: 'english' }, { name: 'German Natural', lang: 'de-DE', voiceURI: 'german' }], cancel: () => {}, speak: () => {} };
+    const controller = createVoiceController({ speechSynthesis: synthesis, storage });
+
+    expect(controller.selectedVoice().voiceURI).toBe('english');
+  });
 });
