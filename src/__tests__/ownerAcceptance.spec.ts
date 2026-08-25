@@ -165,5 +165,10 @@ describe('KC AI owner acceptance', () => {
     expect(styles).toContain('background:radial-gradient(ellipse at 72% 25%');
     expect(styles).toContain('.quick-actions{grid-template-columns:repeat(2,minmax(0,1fr))}');
     expect(styles).toContain('.owner-mode .chat-form{padding:18px 20px;background:#fff');
+    expect(styles).toContain('.board-status-grid{grid-template-columns:repeat(2,minmax(0,1fr))}');
+    expect(styles).toContain('body.owner-mode .board-status-grid{grid-template-columns:1fr}');
+    expect(styles).toContain('white-space:nowrap;overflow-wrap:normal;word-break:keep-all');
+    expect(styles).toContain('.owner-mode .chat-form input{min-width:0}');
+    expect(styles).toContain('@media(max-width:340px)');
   });
 });
