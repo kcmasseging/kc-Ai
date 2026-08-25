@@ -9,7 +9,7 @@
 <body>
   <header class="topbar">
     <a class="brand" href="/"><span class="brand-mark">KC</span><span><strong>KC AI</strong><small class="public-brand-copy">Central intelligence for the KC ecosystem</small><small class="owner-brand-copy">Owner Workspace</small></span></a>
-    <span class="environment-label owner-only">PRODUCTION</span>
+    <span class="environment-label owner-only">PRODUCTION</span><span id="owner-service-status" class="owner-only" role="status" aria-live="polite">Connecting...</span><button id="owner-retry" class="button button-outline owner-only" type="button" disabled>Reconnect</button>
     <div id="session-area"><button class="button button-outline" data-view="signin">Owner sign-in</button></div>
   </header>
   <main class="shell">

@@ -171,4 +171,30 @@ describe('KC AI owner acceptance', () => {
     expect(styles).toContain('.owner-mode .chat-form input{min-width:0}');
     expect(styles).toContain('@media(max-width:340px)');
   });
+
+  it('keeps every owner-board action connected to real behavior', () => {
+    const html = readFileSync('public/index.html', 'utf8');
+    const app = readFileSync('public/app.js', 'utf8');
+    const styles = readFileSync('public/styles.css', 'utf8');
+
+    expect(html).toContain('id="owner-ask"');
+    expect(html).toContain('data-view="tasks"');
+    expect(html).toContain('data-view="capabilities"');
+    expect(html).toContain('data-view="browser"');
+    expect(html).toContain('<strong>View Tasks</strong>');
+    expect(html).toContain('<strong>Check Capabilities</strong>');
+    expect(html).toContain('<strong>Open KC Browser</strong>');
+    expect(html).toContain('id="owner-retry"');
+    expect(app).toContain("document.querySelectorAll('[data-view]').forEach(el=>el.onclick=()=>show(el.dataset.view))");
+    expect(app).toContain("$('owner-ask').onclick=()=>{show('home');$('chat-input').focus()}");
+    expect(app).toContain("$('owner-retry').onclick=()=>");
+    expect(app).toContain("async function sendChatMessage()");
+    expect(app).toContain("if(!message||state.chatBusy)return");
+    expect(app).toContain("send.textContent='Sending...'");
+    expect(app).toContain("send.disabled=false");
+    expect(app).toContain("setOwnerStatus('Reconnecting...')");
+    expect(app).toContain('state.recoveryAttempt>=3');
+    expect(app).toContain("setOwnerStatus('Service ready')");
+    expect(styles).toContain('.owner-mode .chat-form input{min-width:0}');
+  });
 });
