@@ -45,6 +45,16 @@ describe('KC AI decision and execution brain', () => {
     expect(task.blockedReason).toContain('Owner authorization');
   });
 
+  it('isolates sequential task classification from the preceding email task', async () => {
+    const emailTask = await createAndAdvanceTask({ goal: 'send an email to the test recipient' });
+    const browserBuildTask = await createAndAdvanceTask({ goal: 'Build KC Browser' });
+
+    expect(emailTask.requiredCapability).toBe('email.send');
+    expect(browserBuildTask.requiredCapability).toBe('task.orchestration');
+    expect(browserBuildTask.requiredCapability).not.toBe(emailTask.requiredCapability);
+    expect(browserBuildTask.goal).toBe('Build KC Browser');
+  });
+
   it('does not report an unavailable capability as executed', async () => {
     const task = await createAndAdvanceTask({ goal: 'search the web for KC AI' });
 
