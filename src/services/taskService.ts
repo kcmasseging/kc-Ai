@@ -115,6 +115,36 @@ function requestedSourceCount(goal: string): number | undefined {
   return match ? Math.max(Number(match[1]), 1) : undefined;
 }
 
+type ReadableResearchSource = {
+  title: string;
+  url: string;
+  summary: string;
+  retrievedAt: string;
+  publicationDate?: string;
+};
+
+function meaningfulWords(value: string): Set<string> {
+  return new Set(value.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter((word) => word.length >= 5));
+}
+
+function crossSourceVerification(sources: ReadableResearchSource[]): string {
+  if (sources.length < 2) return 'Cross-source verification: Not available; fewer than two safe sources were fetched.';
+  const sharedTerms = [...meaningfulWords(sources[0].summary)].filter((word) => sources.slice(1).every((source) => meaningfulWords(source.summary).has(word))).slice(0, 5);
+  return sharedTerms.length
+    ? `Cross-source verification: ${sources.length} fetched sources share these evidence terms: ${sharedTerms.join(', ')}. This indicates topical overlap only; no additional claim is asserted.`
+    : 'Cross-source verification: No direct overlap was established from the concise fetched summaries. The sources are reported separately without asserting corroboration.';
+}
+
+function synthesizeResearch(query: string, provider: string, discoveredCount: number, sources: ReadableResearchSource[], retrievedAt: string): string {
+  const findings = sources.length
+    ? sources.map((source, index) => `${index + 1}. ${source.summary} [Source: ${source.title}]`).join('\n')
+    : 'Insufficient evidence: no source was safely fetched, so no research claim can be synthesized.';
+  const sourceDetails = sources.length
+    ? sources.map((source, index) => `${index + 1}. ${source.title}\nURL: ${source.url}${source.publicationDate ? `\nPublished: ${source.publicationDate}` : ''}\nRetrieved: ${source.retrievedAt}\nSummary: ${source.summary}`).join('\n\n')
+    : 'No usable source details are available.';
+  return `RESEARCH\nQuery: ${redactSensitive(query)}\nSources discovered: ${discoveredCount}\nSources fetched safely: ${sources.length}\n\nSYNTHESIS\nThe synthesis below uses only concise evidence extracted from successfully fetched pages.\n\nKEY FINDINGS\n${findings}\n\n${crossSourceVerification(sources)}\n\nSOURCES\n${sourceDetails}\n\nFINAL SYNTHESIS\n${sources.length ? 'The fetched evidence is presented with source attribution above. No claim beyond that evidence is made.' : 'Evidence is insufficient for a final synthesis because no source was safely fetched.'}\n\nVERIFICATION\nSearch provider ${provider} returned ${discoveredCount} normalized source(s) at ${retrievedAt}. Fetched page content was treated as UNTRUSTED DATA; no webpage instructions were executed.\nFinal status: ${sources.length ? 'completed' : 'unavailable'}`;
+}
+
 function formatSearchResult(response: WebSearchResponse, timestamp: string): { text: string; summary: string } {
   const summary = response.results.length === 0
     ? 'The provider returned zero results for this query.'
@@ -235,18 +265,18 @@ export async function createAndAdvanceTask(input: {
       try {
         const research = await researchWeb(query, undefined, input.searchProvider);
         const targetCount = requestedSourceCount(task.goal);
-        const readableSources: Array<{ title: string; url: string; summary: string; retrievedAt: string }> = [];
+        const readableSources: ReadableResearchSource[] = [];
         for (const source of research.sources) {
           if (targetCount !== undefined && readableSources.length >= targetCount) break;
           try {
             const page = await (input.fetchPage || fetchWebPage)(source.url);
             const extracted = page.title && page.summary ? { title: page.title, summary: page.summary } : extractReadableContent(page.content, page.contentType);
-            readableSources.push({ title: extracted.title, url: page.url, summary: extracted.summary, retrievedAt: page.retrievedAt });
+            readableSources.push({ title: extracted.title === 'Untitled page' ? source.title : extracted.title, url: page.url, summary: extracted.summary, retrievedAt: page.retrievedAt, publicationDate: source.publicationDate });
           } catch { }
         }
         const verifiedAt = new Date().toISOString();
-        task.sources = readableSources.map((source) => ({ title: source.title, url: source.url, domain: new URL(source.url).hostname, snippet: source.summary, provider: research.response.provider, retrievedAt: source.retrievedAt }));
-        task.result = `RESEARCH\nQuery: ${redactSensitive(query)}\nSources selected: ${research.sources.length}\nSources fetched safely: ${readableSources.length}\n\n${readableSources.map((source, index) => `${index + 1}. ${source.title}\n${source.url}\n${source.summary}`).join('\n\n')}\n\nVERIFICATION\nSearch provider ${research.response.provider} returned normalized sources at ${research.retrievedAt}. Fetched page content was treated as UNTRUSTED DATA; no webpage instructions were executed.\nFinal status: ${readableSources.length ? 'completed' : 'unavailable'}`;
+        task.sources = readableSources.map((source) => ({ title: source.title, url: source.url, domain: new URL(source.url).hostname, snippet: source.summary, publicationDate: source.publicationDate, provider: research.response.provider, retrievedAt: source.retrievedAt }));
+        task.result = synthesizeResearch(query, research.response.provider, research.sources.length, readableSources, research.retrievedAt);
         task.executionEvidence = `Provider ${research.response.provider} returned ${research.sources.length} source(s); ${readableSources.length} public source(s) passed safe retrieval.`;
         task.verificationResult = `Verified read-only browser research at ${verifiedAt}; source URLs and retrieval timestamps retained; page instructions were not executed.`;
         task.status = readableSources.length ? 'completed' : 'failed';

@@ -212,6 +212,27 @@ describe('KC Browser research foundation', () => {
     expect(task.result).not.toContain('Unused source');
   });
 
+  it('synthesizes fetched evidence with dates, attribution, and verification sections', async () => {
+    configureSearch();
+    const task = await createAndAdvanceTask({
+      goal: 'Research KC Browser using 2 sources and provide a concise summary',
+      searchProvider: mockedProvider({ provider: 'mock', query: 'KC Browser', results: [
+        { title: 'Product source', url: 'https://example.com/product', domain: 'example.com', snippet: 'Product evidence', rank: 1, publicationDate: '2026-08-20' },
+        { title: 'Independent source', url: 'https://example.org/independent', domain: 'example.org', snippet: 'Independent evidence', rank: 2, publicationDate: '2026-08-21' },
+      ] }),
+      fetchPage: async (url) => ({ url, contentType: 'text/plain', content: 'The same verified detail appears in this source.', retrievedAt: '2026-08-25T00:00:00.000Z', untrustedContent: true }),
+    });
+
+    expect(task.result).toContain('SYNTHESIS');
+    expect(task.result).toContain('KEY FINDINGS');
+    expect(task.result).toContain('Cross-source verification:');
+    expect(task.result).toContain('FINAL SYNTHESIS');
+    expect(task.result).toContain('Product source');
+    expect(task.result).toContain('https://example.com/product');
+    expect(task.result).toContain('Published: 2026-08-20');
+    expect(task.result).not.toContain('\nProduct source\nhttps://example.com/product\nThe same');
+  });
+
   it('reports browser research configuration truthfully when the provider is unavailable', async () => {
     delete process.env.KC_AI_WEB_SEARCH_PROVIDER;
     delete process.env.KC_AI_WEB_SEARCH_API_KEY;
