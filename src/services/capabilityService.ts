@@ -14,6 +14,8 @@ const capabilities: Capability[] = [
   { id: 'welcome.generate', description: 'Generate the post-authentication welcome payload', status: 'available' },
   { id: 'tts.browser-payload', description: 'Prepare a browser TTS payload', status: 'available' },
   { id: 'task.orchestration', description: 'Create and advance task state', status: 'available' },
+  { id: 'web.fetch/read', description: 'Retrieve permitted public web page content as untrusted data', status: 'available' },
+  { id: 'browser.research', description: 'Research public web sources through KC AI', status: 'planned', reason: 'Research requires a configured web.search provider' },
   { id: 'internal.reasoning', description: 'Perform safe internal reasoning and task analysis', status: 'available' },
   { id: 'internal.analysis', description: 'Analyze information already supplied to KC AI', status: 'available' },
   { id: 'private-build', description: 'Owner-only private development and staging lifecycle', status: 'available', requiresOwner: true },
@@ -37,11 +39,12 @@ const capabilities: Capability[] = [
 ];
 
 export function listCapabilities(): Capability[] {
-  return capabilities.map((capability) => capability.id === 'web.search' ? webSearchCapability() : ({ ...capability }));
+  return capabilities.map((capability) => capability.id === 'web.search' ? webSearchCapability() : capability.id === 'browser.research' ? browserResearchCapability() : ({ ...capability }));
 }
 
 export function getCapability(id: string): Capability | undefined {
   if (id === 'web.search') return webSearchCapability();
+  if (id === 'browser.research') return browserResearchCapability();
   const capability = capabilities.find((entry) => entry.id === id);
   return capability ? { ...capability } : undefined;
 }
@@ -61,4 +64,11 @@ function webSearchCapability(): Capability {
   return configuration.configured
     ? { id: 'web.search', description: 'Search the web through an external provider', status: 'available', reason: 'Configured provider credentials are present; availability is confirmed per search response' }
     : { id: 'web.search', description: 'Search the web through an external provider', status: 'credentials-required', reason: configuration.reason };
+}
+
+function browserResearchCapability(): Capability {
+  const search = webSearchCapability();
+  return search.status === 'available'
+    ? { id: 'browser.research', description: 'Research public web sources through KC AI', status: 'available', reason: 'Configured search provider is available; each source remains externally verifiable' }
+    : { id: 'browser.research', description: 'Research public web sources through KC AI', status: search.status, reason: search.reason };
 }

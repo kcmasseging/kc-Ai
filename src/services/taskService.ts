@@ -4,11 +4,14 @@ import { recordAudit } from './auditService';
 import { getStorage } from './storage';
 import { createHealthResponse } from './healthService';
 import type { TaskRecord } from '../types/task';
-import { getWebSearchProvider, WebSearchProviderError, type WebSearchResponse } from './webSearchService';
+import { WebSearchProviderError, type SearchProvider, type WebSearchResponse } from './webSearchService';
 import { redactSensitive } from './auditService';
+import { researchWeb } from './browserResearchService';
+import { fetchWebPage, WebFetchError } from './webFetchService';
 
 function inferCapability(goal: string): string {
   const normalized = goal.toLowerCase();
+  if (/\b(fetch|read|open|retrieve)\b/.test(normalized) && /https?:\/\/\S+/.test(normalized)) return 'web.fetch/read';
   if (/\b(send|sending|email|e-mail)\b/.test(normalized) && /\b(email|e-mail)\b/.test(normalized)) return 'email.send';
   if (/\b(send|sending|message|messaging|text|sms|notify|notification)\b/.test(normalized)) return 'message.send';
   if (/\b(pay|payment|payments|transfer|transfers|wire|refund|purchase|charge)\b/.test(normalized)) return 'payment.transfer';
@@ -79,6 +82,8 @@ export async function createAndAdvanceTask(input: {
   actorRole?: 'system' | 'user' | 'owner';
   executeInternal?: () => Promise<string | undefined> | string | undefined;
   verifyInternal?: (evidence: string) => Promise<string | undefined> | string | undefined;
+  searchProvider?: SearchProvider;
+  fetchPage?: (url: string) => ReturnType<typeof fetchWebPage>;
 }): Promise<TaskRecord> {
   const now = new Date().toISOString();
   const task: TaskRecord = {
@@ -127,18 +132,49 @@ export async function createAndAdvanceTask(input: {
   }
 
   if (task.requiredCapability !== 'task.orchestration') {
+    if (task.requiredCapability === 'web.fetch/read') {
+      const pageUrl = task.goal.match(/https?:\/\/\S+/i)?.[0];
+      task.status = 'executing';
+      task.progress.push('Read-only web page retrieval started.');
+      try {
+        const page = await (input.fetchPage || fetchWebPage)(pageUrl!);
+        task.result = `RETRIEVED SOURCE\nURL: ${page.url}\nRetrieved at: ${page.retrievedAt}\nContent type: ${page.contentType}\nUNTRUSTED PAGE CONTENT\n${page.content}`;
+        task.sources = [{ title: page.url, url: page.url, domain: new URL(page.url).hostname, snippet: page.content.slice(0, 500), provider: 'web.fetch/read', retrievedAt: page.retrievedAt }];
+        task.executionEvidence = `Retrieved ${page.contentType} content from ${page.url}; content is marked untrusted.`;
+        task.verificationResult = `Verified retrieval response from web.fetch/read at ${page.retrievedAt}; no webpage instructions were executed.`;
+        task.status = 'completed';
+        task.verificationStatus = 'verified';
+        task.finalResult = task.result;
+        task.progress.push(task.finalResult);
+        task.lastSuccessfulStep = task.finalResult;
+        task.updatedAt = page.retrievedAt;
+        await getStorage().updateTask(task);
+        await recordAudit({ actionType: 'task.completed', taskId: task.taskId, actorRole: input.actorRole || 'user', outcome: 'completed', verificationStatus: 'verified', capabilityUsed: 'web.fetch/read', providerName: 'web-fetch', resultCount: 1, verificationResult: task.verificationResult });
+        return { ...task, progress: [...task.progress] };
+      } catch (error) {
+        task.status = 'failed';
+        task.lastError = error instanceof WebFetchError ? error.message : error instanceof Error ? error.message : 'Page retrieval failed unexpectedly';
+        task.progress.push(`Failed: ${task.lastError}.`);
+        task.updatedAt = new Date().toISOString();
+        await getStorage().updateTask(task);
+        await recordAudit({ actionType: 'task.failed', taskId: task.taskId, actorRole: input.actorRole || 'user', outcome: 'failed', verificationStatus: 'not-verified', error: task.lastError, capabilityUsed: 'web.fetch/read', providerName: 'web-fetch' });
+        return { ...task, progress: [...task.progress] };
+      }
+    }
     if (task.requiredCapability === 'web.search') {
       task.status = 'executing';
       task.progress.push('Read-only web search execution started.');
       const query = searchQuery(task.goal);
       try {
-        const response = await getWebSearchProvider().search(query);
+        const research = await researchWeb(query, undefined, input.searchProvider);
+        const response = research.response;
         const verifiedAt = new Date().toISOString();
         const formatted = formatSearchResult(response, verifiedAt);
         task.webSearch = { query: response.query, provider: response.provider, results: response.results, summary: formatted.summary };
+        task.sources = research.sources;
         task.result = formatted.text;
-        task.executionEvidence = `Provider ${response.provider} returned a valid response with ${response.results.length} normalized result(s).`;
-        task.verificationResult = `Verified provider response from ${response.provider}; result count ${response.results.length}; timestamp ${verifiedAt}.`;
+        task.executionEvidence = `Provider ${response.provider} returned a valid response with ${response.results.length} normalized result(s) at ${research.retrievedAt}.`;
+        task.verificationResult = `Verified provider response from ${response.provider}; result count ${response.results.length}; normalized source metadata retained; timestamp ${verifiedAt}.`;
         task.status = 'completed';
         task.verificationStatus = 'verified';
         task.finalResult = task.result;
@@ -152,7 +188,7 @@ export async function createAndAdvanceTask(input: {
         return { ...task, progress: [...task.progress] };
       } catch (error) {
         task.status = 'failed';
-        task.lastError = error instanceof WebSearchProviderError ? error.message : 'Web search provider failed unexpectedly';
+        task.lastError = error instanceof WebSearchProviderError ? error.message : error instanceof Error ? error.message : 'Web search provider failed unexpectedly';
         task.progress.push(`Failed: ${task.lastError}.`);
         task.updatedAt = new Date().toISOString();
         await getStorage().updateTask(task);

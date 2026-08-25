@@ -9,6 +9,7 @@ export interface WebSearchResult {
   domain: string;
   snippet: string;
   rank: number;
+  publicationDate?: string;
 }
 
 export interface WebSearchResponse {
@@ -63,11 +64,12 @@ export class BraveSearchProvider implements SearchProvider {
     const items = (body as { web?: { results?: unknown } })?.web?.results;
     if (!Array.isArray(items)) throw new WebSearchProviderError('malformed-response', 'Web search provider response did not contain web results');
     const results = items.map((item, index) => {
-      const value = item as { title?: unknown; url?: unknown; description?: unknown };
+      const value = item as { title?: unknown; url?: unknown; description?: unknown; page_age?: unknown; published?: unknown };
       if (typeof value.title !== 'string' || typeof value.url !== 'string' || typeof value.description !== 'string') return undefined;
       let domain: string;
       try { domain = new URL(value.url).hostname; } catch { domain = 'unknown'; }
-      return { title: value.title, url: value.url, domain, snippet: value.description, rank: index + 1 };
+      const publicationDate = typeof value.published === 'string' ? value.published : typeof value.page_age === 'string' ? value.page_age : undefined;
+      return { title: value.title, url: value.url, domain, snippet: value.description, ...(publicationDate ? { publicationDate } : {}), rank: index + 1 };
     }).filter((result): result is WebSearchResult => Boolean(result));
     if (items.length > 0 && results.length === 0) throw new WebSearchProviderError('malformed-response', 'Web search provider returned no valid result records');
     return { provider: this.name, query, results };

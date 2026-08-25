@@ -61,6 +61,9 @@ Required variables include:
 - `KC_AI_TTS_VOICE`
 - `KC_AI_ENABLE_VOICE`
 - `KC_AI_ENABLE_WELCOME`
+- `KC_AI_WEB_SEARCH_PROVIDER` (`brave` when configured)
+- `KC_AI_WEB_SEARCH_API_KEY` (server-side only; never returned to clients or logs)
+- `KC_AI_WEB_SEARCH_ENDPOINT` (optional Brave-compatible endpoint)
 
 The project intentionally does not include real secrets or external credentials.
 
@@ -92,6 +95,7 @@ This repository contains the first usable autonomous KC AI foundation. It does n
 - Owner-only wallet foundation is available only inside Private Build Mode. It stores immutable credit/debit ledger entries, derives balances from ledger records, protects mutations with idempotency and transaction locking, and keeps every unconfirmed transaction `UNVERIFIED`. It has no public route, withdrawal, transfer, funding provider, payout provider, or live money capability.
 - Private Build Mode tasks are associated with their private build context and remain in the existing private development/staging boundary. No browser/client code receives financial credentials, and no public route can activate the mode.
 - Important task actions create structured audit records with actor role, outcome, verification status, and redacted error text. Tasks, task history, and audit records use the configured storage adapter.
+- KC Browser research uses the central task lifecycle and keeps search provider adapters behind `web.search`. Search tasks persist normalized source metadata, provider, retrieval time, and verification evidence. `web.fetch/read` is a separate bounded read-only adapter that returns webpage content as untrusted data; it blocks credentials in URLs, private/localhost destinations, unsafe schemes, redirects, unsupported content, and oversized responses.
 - KC Secret Bus uses AES-256-GCM authenticated encryption in memory and requires `KC_AI_SECRET_BUS_KEY`. It never returns values through chat, logs, audit records, or status responses. Without that key it reports unavailable rather than pretending secure storage exists.
 - Temporary local task storage is marked by its filename and ignored by Git. No real credentials or vault contents belong in this repository.
 
@@ -100,6 +104,7 @@ This repository contains the first usable autonomous KC AI foundation. It does n
 - Durable highly available task and audit storage requires a production database and retention policy. PostgreSQL is selected with `KC_AI_STORAGE_DRIVER=postgres` and `KC_AI_DATABASE_URL`; `KC_AI_DATABASE_SSL=true` enables certificate validation. The schema is in [migrations/001_initial.sql](migrations/001_initial.sql) and is applied transactionally at startup. Local stores remain the development fallback.
 - KC Secret Bus production use requires a managed key-management system, owner re-authentication/recovery policy, encrypted durable storage, rotation, backup, and access monitoring. The current memory implementation is only an inspectable foundation.
 - Product data changes, deployment, email, payments, and other external side effects require registered integrations, scoped authorization, credentials, and verification adapters. They are currently unavailable or planned.
+- KC Browser search is implemented but requires server-side Brave configuration. Without it, `web.search` remains blocked and KC AI does not fabricate results. A configured provider is not considered live-verified until a safe external search succeeds.
 - Private Build Mode does not implement wallet ledger execution, payment-provider calls, funding, withdrawals, deployment, publication, or production activation. Those capabilities remain blocked until separately integrated, authorized, and verified.
 - Wallet country and rail records use `NOT_CONFIGURED`, `CONFIGURED`, `TESTING`, `VERIFIED`, `LIVE`, or `DISABLED`. The current Nigeria/NGN, Philippines/PHP, Indonesia/IDR, China/CNY, and Pakistan/PKR entries are all `NOT_CONFIGURED`; no provider success can be recorded without a trusted verification mechanism.
 - Owner token issuance and identity lifecycle must be provided by a trusted KC identity service. This repository only verifies signed claims and does not issue owner credentials.
