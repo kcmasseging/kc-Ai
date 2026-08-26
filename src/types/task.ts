@@ -56,6 +56,12 @@ export interface TaskRecord {
     intendedAction: string;
     expectedResult: string;
     validationRequirement: string;
+    ownerProfileApplied?: {
+      preferredWorkingMethod?: string;
+      outputStyle?: string;
+      autonomy?: string;
+      workingContext: string[];
+    };
   };
   executionEvidence?: string;
   result?: string;

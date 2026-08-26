@@ -8,6 +8,7 @@ import { WebSearchProviderError, type SearchProvider, type WebSearchResponse } f
 import { redactSensitive } from './auditService';
 import { researchWeb } from './browserResearchService';
 import { extractReadableContent, fetchWebPage, WebFetchError } from './webFetchService';
+import type { OwnerWorkingProfile } from '../types/ownerProfile';
 
 export function classifyGoal(goal: string): string {
   const normalized = goal.toLowerCase();
@@ -169,6 +170,7 @@ export async function createAndAdvanceTask(input: {
   searchProvider?: SearchProvider;
   fetchPage?: (url: string) => ReturnType<typeof fetchWebPage>;
   continuationTaskId?: string;
+  ownerProfile?: OwnerWorkingProfile;
 }): Promise<TaskRecord> {
   const rawGoal = input.goal;
   const normalizedGoal = rawGoal.trim();
@@ -209,7 +211,18 @@ export async function createAndAdvanceTask(input: {
     intendedAction: task.understanding?.requestedAction || 'Perform the classified task',
     expectedResult: task.requiredCapability === 'task.orchestration' ? 'A structured internal task result' : 'The requested external side effect',
     validationRequirement: 'A real execution result must be available before completion',
+    ownerProfileApplied: input.ownerProfile ? {
+      preferredWorkingMethod: input.ownerProfile.preferences.preferredWorkingMethod,
+      outputStyle: input.ownerProfile.preferences.outputStyle,
+      autonomy: input.ownerProfile.preferences.autonomy,
+      workingContext: [...input.ownerProfile.workingContext],
+    } : undefined,
   };
+  if (input.ownerProfile) {
+    const method = input.ownerProfile.preferences.preferredWorkingMethod;
+    const style = input.ownerProfile.preferences.outputStyle;
+    task.progress.push(`Owner profile applied${method ? `: ${method}` : ''}${style ? `; output style ${style}` : ''}.`);
+  }
   await getStorage().updateTask(task);
   const capability = checkCapability(task.requiredCapability);
 

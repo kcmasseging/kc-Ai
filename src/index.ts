@@ -207,7 +207,8 @@ app.patch('/api/v1/owner/profile', requireOwner, async (req: Request, res: Respo
 
 app.post('/api/v1/owner/tasks', requireOwner, async (req: Request, res: Response) => {
   if (typeof req.body?.goal !== 'string' || !req.body.goal.trim()) { res.status(400).json({ error: 'A non-empty task goal is required' }); return; }
-  const task = await createAndAdvanceTask({ goal: req.body.goal, actorRole: 'owner', appId: 'kc-robot', appName: 'KC Robot' });
+  const profile = await loadOwnerProfile(res.locals.owner.subject);
+  const task = await createAndAdvanceTask({ goal: req.body.goal, actorRole: 'owner', appId: 'kc-robot', appName: 'KC Robot', ownerProfile: profile });
   res.status(task.status === 'blocked' ? 409 : 201).json({ task });
 });
 
