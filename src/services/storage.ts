@@ -4,6 +4,7 @@ import type { TaskRecord } from '../types/task';
 import type { WalletAccount, WalletLedgerEntry, WalletMutationInput, WalletMutationResult, WalletState, WalletTransaction } from '../types/wallet';
 import type { ProjectIntent } from '../types/projectIntent';
 import type { ConversationRecord } from '../types/conversation';
+import type { OwnerWorkingProfile } from '../types/ownerProfile';
 
 export interface TaskHistoryRecord {
   taskId: string;
@@ -33,6 +34,8 @@ export interface Storage {
   listProjectIntents(ownerId: string): Promise<ProjectIntent[]>;
   getConversation(ownerId: string, sessionId: string): Promise<ConversationRecord | undefined>;
   saveConversation(conversation: ConversationRecord): Promise<ConversationRecord>;
+  getOwnerProfile(ownerId: string): Promise<OwnerWorkingProfile | undefined>;
+  saveOwnerProfile(profile: OwnerWorkingProfile): Promise<OwnerWorkingProfile>;
 }
 
 export class StorageUnavailableError extends Error {
@@ -51,6 +54,7 @@ export class LocalStorage implements Storage {
   private readonly wallets: WalletState[];
   private readonly projectIntents: ProjectIntent[];
   private readonly conversations: ConversationRecord[];
+  private readonly ownerProfiles: OwnerWorkingProfile[];
   private initialized = true;
 
   constructor(
@@ -60,12 +64,14 @@ export class LocalStorage implements Storage {
     private readonly walletPath = process.env.KC_AI_WALLET_STORE_PATH || '.kc-ai-wallets.json',
     private readonly projectIntentPath = process.env.KC_AI_PROJECT_INTENT_STORE_PATH || '.kc-ai-project-intents.json',
     private readonly conversationPath = process.env.KC_AI_CONVERSATION_STORE_PATH || '.kc-ai-conversations.json',
+    private readonly ownerProfilePath = process.env.KC_AI_OWNER_PROFILE_STORE_PATH || '.kc-ai-owner-profiles.json',
   ) {
     this.history = loadJsonArray<TaskHistoryRecord>(historyPath);
     this.audits = loadJsonArray<AuditRecord>(auditPath);
     this.wallets = loadJsonArray<WalletState>(walletPath);
     this.projectIntents = loadJsonArray<ProjectIntent>(projectIntentPath);
     this.conversations = loadJsonArray<ConversationRecord>(conversationPath);
+    this.ownerProfiles = loadJsonArray<OwnerWorkingProfile>(ownerProfilePath);
     for (const task of loadJsonArray<TaskRecord>(taskPath)) this.tasks.set(task.taskId, task);
   }
 
@@ -198,11 +204,15 @@ export class LocalStorage implements Storage {
     return this.copyConversation(conversation);
   }
 
+  async getOwnerProfile(ownerId: string): Promise<OwnerWorkingProfile | undefined> { this.ensureInitialized(); const profile = this.ownerProfiles.find((entry) => entry.ownerId === ownerId); return profile ? this.copyOwnerProfile(profile) : undefined; }
+  async saveOwnerProfile(profile: OwnerWorkingProfile): Promise<OwnerWorkingProfile> { this.ensureInitialized(); const index = this.ownerProfiles.findIndex((entry) => entry.ownerId === profile.ownerId); if (index < 0) this.ownerProfiles.push(this.copyOwnerProfile(profile)); else this.ownerProfiles[index] = this.copyOwnerProfile(profile); this.persist(); return this.copyOwnerProfile(profile); }
+
   private persist(): void {
     writeJsonArray(this.taskPath, [...this.tasks.values()]);
     writeJsonArray(this.historyPath, this.history);
     writeJsonArray(this.projectIntentPath, this.projectIntents);
     writeJsonArray(this.conversationPath, this.conversations);
+    writeJsonArray(this.ownerProfilePath, this.ownerProfiles);
   }
 
   private copyProjectIntent(intent: ProjectIntent): ProjectIntent {
@@ -214,6 +224,7 @@ export class LocalStorage implements Storage {
   }
 
   private copyConversation(conversation: ConversationRecord): ConversationRecord { return { ...conversation, messages: conversation.messages.map((message) => ({ ...message })) }; }
+  private copyOwnerProfile(profile: OwnerWorkingProfile): OwnerWorkingProfile { return { ...profile, preferences: { ...profile.preferences }, workingContext: [...profile.workingContext], authorizationNotes: [...profile.authorizationNotes] }; }
 
   private copyWallet(wallet: WalletState): WalletState {
     return { account: { ...wallet.account }, transactions: wallet.transactions.map((transaction) => ({ ...transaction })), ledger: wallet.ledger.map((entry) => ({ ...entry })) };

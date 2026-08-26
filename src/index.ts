@@ -19,6 +19,7 @@ import { verifySystem } from './services/systemVerificationService';
 import { HealthWatchService } from './services/healthWatchService';
 import { applyCorrection, approveProjectIntent, createProjectIntent, loadProjectIntent, recordRejectedRequirement, recordUnresolvedQuestion, summarizeProjectIntent, toBuilderHandoff, toProjectSpecification, updateProjectIntent } from './services/projectIntentService';
 import { understandOwnerMessage } from './services/conversationUnderstandingService';
+import { loadOwnerProfile, updateOwnerProfile } from './services/ownerProfileService';
 
 const app = express();
 const port = env.KC_AI_PORT;
@@ -189,6 +190,25 @@ app.post('/api/v1/auth/reauthenticate', requireOwner, async (req: Request, res: 
     return;
   }
   res.json({ stepUpToken: token, expiresInSeconds: 300 });
+});
+
+app.get('/api/v1/owner/profile', requireOwner, async (_req: Request, res: Response) => {
+  res.json({ profile: await loadOwnerProfile(res.locals.owner.subject) });
+});
+
+app.patch('/api/v1/owner/profile', requireOwner, async (req: Request, res: Response) => {
+  const body = req.body ?? {};
+  if (body.displayName !== undefined && typeof body.displayName !== 'string') { res.status(400).json({ error: 'displayName must be a string' }); return; }
+  if (body.preferences !== undefined && (typeof body.preferences !== 'object' || Array.isArray(body.preferences))) { res.status(400).json({ error: 'preferences must be an object' }); return; }
+  const arrays = ['workingContext', 'authorizationNotes'] as const;
+  if (arrays.some((field) => body[field] !== undefined && (!Array.isArray(body[field]) || body[field].some((value: unknown) => typeof value !== 'string')))) { res.status(400).json({ error: 'Profile lists must contain strings' }); return; }
+  res.json({ profile: await updateOwnerProfile({ ownerId: res.locals.owner.subject, displayName: body.displayName, preferences: body.preferences, workingContext: body.workingContext, authorizationNotes: body.authorizationNotes }) });
+});
+
+app.post('/api/v1/owner/tasks', requireOwner, async (req: Request, res: Response) => {
+  if (typeof req.body?.goal !== 'string' || !req.body.goal.trim()) { res.status(400).json({ error: 'A non-empty task goal is required' }); return; }
+  const task = await createAndAdvanceTask({ goal: req.body.goal, actorRole: 'owner', appId: 'kc-robot', appName: 'KC Robot' });
+  res.status(task.status === 'blocked' ? 409 : 201).json({ task });
 });
 
 app.post('/api/v1/owner/project-intents', requireOwner, async (req: Request, res: Response) => {

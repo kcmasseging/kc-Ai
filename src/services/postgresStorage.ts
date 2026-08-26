@@ -4,6 +4,7 @@ import type { TaskRecord } from '../types/task';
 import type { WalletAccount, WalletLedgerEntry, WalletMutationInput, WalletMutationResult, WalletState, WalletTransaction } from '../types/wallet';
 import type { ProjectIntent } from '../types/projectIntent';
 import type { ConversationRecord } from '../types/conversation';
+import type { OwnerWorkingProfile } from '../types/ownerProfile';
 
 interface QueryResult<T = unknown> { rows: T[]; rowCount: number | null; }
 interface PoolClient { query<T = unknown>(text: string, values?: unknown[]): Promise<QueryResult<T>>; release(): void; }
@@ -86,6 +87,12 @@ CREATE TABLE IF NOT EXISTS kc_ai_conversations (
   conversation jsonb NOT NULL,
   updated_at timestamptz NOT NULL,
   UNIQUE (owner_id, session_id)
+);
+CREATE TABLE IF NOT EXISTS kc_ai_owner_profiles (
+  owner_id text PRIMARY KEY,
+  profile jsonb NOT NULL,
+  created_at timestamptz NOT NULL,
+  updated_at timestamptz NOT NULL
 );
 `;
 
@@ -211,6 +218,8 @@ export class PostgresStorage implements Storage {
   async listProjectIntents(ownerId: string): Promise<ProjectIntent[]> { this.ensureInitialized(); const client = await this.getClient(); try { const result = await client.query<{ intent: ProjectIntent }>('SELECT intent FROM kc_ai_project_intents WHERE owner_id = $1 ORDER BY updated_at DESC', [ownerId]); return result.rows.map((row) => ({ ...row.intent })); } finally { client.release(); } }
   async getConversation(ownerId: string, sessionId: string): Promise<ConversationRecord | undefined> { this.ensureInitialized(); const client = await this.getClient(); try { const result = await client.query<{ conversation: ConversationRecord }>('SELECT conversation FROM kc_ai_conversations WHERE owner_id = $1 AND session_id = $2', [ownerId, sessionId]); return result.rows[0]?.conversation; } finally { client.release(); } }
   async saveConversation(conversation: ConversationRecord): Promise<ConversationRecord> { this.ensureInitialized(); const client = await this.getClient(); try { await client.query('INSERT INTO kc_ai_conversations (conversation_id, owner_id, session_id, conversation, updated_at) VALUES ($1, $2, $3, $4::jsonb, $5) ON CONFLICT (owner_id, session_id) DO UPDATE SET conversation = $4::jsonb, updated_at = $5', [conversation.conversationId, conversation.ownerId, conversation.sessionId, JSON.stringify(conversation), conversation.updatedAt]); return { ...conversation, messages: conversation.messages.map((message) => ({ ...message })) }; } finally { client.release(); } }
+  async getOwnerProfile(ownerId: string): Promise<OwnerWorkingProfile | undefined> { this.ensureInitialized(); const client = await this.getClient(); try { const result = await client.query<{ profile: OwnerWorkingProfile }>('SELECT profile FROM kc_ai_owner_profiles WHERE owner_id = $1', [ownerId]); return result.rows[0]?.profile; } finally { client.release(); } }
+  async saveOwnerProfile(profile: OwnerWorkingProfile): Promise<OwnerWorkingProfile> { this.ensureInitialized(); const client = await this.getClient(); try { await client.query('INSERT INTO kc_ai_owner_profiles (owner_id, profile, created_at, updated_at) VALUES ($1, $2::jsonb, $3, $4) ON CONFLICT (owner_id) DO UPDATE SET profile = $2::jsonb, updated_at = $4', [profile.ownerId, JSON.stringify(profile), profile.createdAt, profile.updatedAt]); return { ...profile, preferences: { ...profile.preferences }, workingContext: [...profile.workingContext], authorizationNotes: [...profile.authorizationNotes] }; } finally { client.release(); } }
 
   async createWalletAccount(account: WalletAccount): Promise<WalletAccount> {
     this.ensureInitialized(); const client = await this.getClient();
