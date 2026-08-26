@@ -37,3 +37,34 @@ export interface BuilderProgress {
   artifacts: string[];
   updatedAt: string;
 }
+
+export type BuildRunStatus = BuilderProgressStatus | 'COMPLETED' | 'FAILED' | 'BLOCKED';
+
+export interface Project {
+  projectId: string;
+  name: string;
+  workspacePath: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface BuildRun {
+  buildRunId: string;
+  projectId: string;
+  handoffId: string;
+  specificationVersion: number;
+  status: BuildRunStatus;
+  currentStep?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ActivityLogItem {
+  activityId: string;
+  projectId: string;
+  buildRunId?: string;
+  action: string;
+  outcome: 'started' | 'completed' | 'blocked' | 'failed';
+  detail?: string;
+  createdAt: string;
+}
