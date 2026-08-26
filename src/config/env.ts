@@ -5,7 +5,7 @@ dotenv.config();
 
 const envSchema = z.object({
   KC_AI_ENV: z.enum(['development', 'test', 'production']).default('development'),
-  KC_AI_PORT: z.coerce.number().int().positive().default(3000),
+  KC_AI_PORT: z.coerce.number().int().positive().default(Number(process.env.PORT) || 3000),
   KC_AI_LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
   KC_AI_ALLOWED_ORIGINS: z.string().default('http://localhost:3000'),
   KC_AI_JWT_SECRET: z.string().min(16).default('development-secret-change-me'),
