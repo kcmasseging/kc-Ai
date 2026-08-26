@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { configureStorage, LocalStorage } from '../services/storage';
-import { understandOwnerMessage, projectReadiness } from '../services/conversationUnderstandingService';
+import { recallOwnerMemory, understandOwnerMessage, projectReadiness } from '../services/conversationUnderstandingService';
 
 let directory: string;
 function useStorage(): void {
@@ -83,5 +83,31 @@ describe('conversation project understanding', () => {
     useStorage();
     const project = await say('owner-a', 'session-a', 'I want to build KC Telecom.');
     expect(project.intent && projectReadiness(project.intent)).toBe('NEEDS_CLARIFICATION');
+  });
+
+  it('recalls stored owner decisions after a persistence reload', async () => {
+    useStorage();
+    const created = await say('owner-a', 'session-a', 'I want to build KC Telecom.');
+    await say('owner-a', 'session-a', 'It should support physical SIM.');
+    const reloaded = new LocalStorage(...['tasks', 'audit', 'history', 'wallets', 'intents', 'conversations'].map((name) => path.join(directory, `${name}.json`)) as [string, string, string, string, string, string]);
+    configureStorage(reloaded);
+    const matches = await recallOwnerMemory({ ownerId: 'owner-a', query: 'What was the decision about physical SIM?', projectId: created.activeProjectId });
+    expect(matches[0]).toMatchObject({ content: expect.stringContaining('It should support physical SIM'), projectId: created.activeProjectId, role: 'owner' });
+    const vague = await recallOwnerMemory({ ownerId: 'owner-a', query: 'What did we decide about this before?', projectId: created.activeProjectId });
+    expect(vague[0]?.content).toContain('physical SIM');
+  });
+
+  it('returns no fabricated memory and keeps owners and projects isolated', async () => {
+    useStorage();
+    const telecom = await say('owner-a', 'session-a', 'I want to build KC Telecom.');
+    await say('owner-a', 'session-a', 'It should support airtime.');
+    const browser = await say('owner-a', 'session-a', "Let's discuss KC Browser.");
+    await say('owner-a', 'session-a', 'It should support tabs.');
+    expect(await recallOwnerMemory({ ownerId: 'owner-a', query: 'airtime', projectId: browser.activeProjectId })).toHaveLength(0);
+    expect(await recallOwnerMemory({ ownerId: 'owner-b', query: 'airtime' })).toHaveLength(0);
+    const missing = await say('owner-a', 'session-a', 'What did we decide about payments?');
+    expect(missing.reply).toContain('could not find a saved conversation');
+    expect(missing.reply).not.toContain('payments are supported');
+    expect(telecom.activeProjectId).not.toBe(browser.activeProjectId);
   });
 });

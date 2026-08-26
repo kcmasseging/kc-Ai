@@ -33,6 +33,7 @@ export interface Storage {
   getProjectIntent(projectId: string, ownerId: string): Promise<ProjectIntent | undefined>;
   listProjectIntents(ownerId: string): Promise<ProjectIntent[]>;
   getConversation(ownerId: string, sessionId: string): Promise<ConversationRecord | undefined>;
+  listConversations(ownerId: string): Promise<ConversationRecord[]>;
   saveConversation(conversation: ConversationRecord): Promise<ConversationRecord>;
   getOwnerProfile(ownerId: string): Promise<OwnerWorkingProfile | undefined>;
   saveOwnerProfile(profile: OwnerWorkingProfile): Promise<OwnerWorkingProfile>;
@@ -196,6 +197,7 @@ export class LocalStorage implements Storage {
 
   async listProjectIntents(ownerId: string): Promise<ProjectIntent[]> { this.ensureInitialized(); return this.projectIntents.filter((entry) => entry.ownerId === ownerId).map((entry) => this.copyProjectIntent(entry)); }
   async getConversation(ownerId: string, sessionId: string): Promise<ConversationRecord | undefined> { this.ensureInitialized(); const value = this.conversations.find((entry) => entry.ownerId === ownerId && entry.sessionId === sessionId); return value ? this.copyConversation(value) : undefined; }
+  async listConversations(ownerId: string): Promise<ConversationRecord[]> { this.ensureInitialized(); return this.conversations.filter((entry) => entry.ownerId === ownerId).map((entry) => this.copyConversation(entry)); }
   async saveConversation(conversation: ConversationRecord): Promise<ConversationRecord> {
     this.ensureInitialized();
     const index = this.conversations.findIndex((entry) => entry.ownerId === conversation.ownerId && entry.sessionId === conversation.sessionId);

@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { getStorage } from './storage';
 import { applyCorrection, createProjectIntent, loadProjectIntent, recordRejectedRequirement, updateProjectIntent } from './projectIntentService';
+import { redactSensitive } from './auditService';
 import type { ConversationRecord, Confidence, InterpretationKind } from '../types/conversation';
 import type { ProjectIntent } from '../types/projectIntent';
 
@@ -14,6 +15,23 @@ const InterpretationSchema = z.object({
   response: z.string().optional(),
 });
 export type Interpretation = z.infer<typeof InterpretationSchema>;
+
+export interface ConversationMemoryMatch { conversationId: string; sessionId: string; projectId?: string; role: 'owner' | 'assistant'; content: string; createdAt: string; score: number; }
+
+function memoryTerms(query: string): string[] { return query.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter((term) => term.length >= 4 && !['what', 'when', 'where', 'this', 'that', 'before', 'last', 'about', 'previous', 'conversation', 'discussed', 'decide', 'decided', 'decision', 'decisions', 'remember'].includes(term)); }
+
+export async function recallOwnerMemory(input: { ownerId: string; query: string; projectId?: string; limit?: number }): Promise<ConversationMemoryMatch[]> {
+  const terms = memoryTerms(input.query);
+  const conversations = await getStorage().listConversations(input.ownerId);
+  const matches = conversations.flatMap<ConversationMemoryMatch>((conversation) => conversation.messages.flatMap((message) => {
+    if (input.projectId && message.projectId !== input.projectId) return [];
+    const searchable = message.content.toLowerCase();
+    const score = terms.reduce((total, term) => total + (searchable.includes(term) ? 1 : 0), 0);
+    return score ? [{ conversationId: conversation.conversationId, sessionId: conversation.sessionId, projectId: message.projectId, role: message.role, content: redactSensitive(message.content) || '', createdAt: message.createdAt, score }] : [];
+  })).sort((a, b) => b.score - a.score).slice(0, input.limit || 5);
+  if (matches.length || !input.projectId || terms.length > 0) return matches;
+  return conversations.flatMap<ConversationMemoryMatch>((conversation) => conversation.messages.filter((message) => message.role === 'owner' && message.projectId === input.projectId).map((message) => ({ conversationId: conversation.conversationId, sessionId: conversation.sessionId, projectId: message.projectId, role: message.role, content: redactSensitive(message.content) || '', createdAt: message.createdAt, score: 1 }))).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, input.limit || 5);
+}
 
 function clean(value: string): string { return value.trim().replace(/[.!?]+$/, ''); }
 function projectNameFrom(text: string): string | undefined {
@@ -71,6 +89,16 @@ export async function understandOwnerMessage(input: { ownerId: string; sessionId
   let intent: ProjectIntent | undefined;
   let reply: string;
   let activeProjectId = conversation.activeProjectId;
+  if (/\b(?:what did we decide|what did i tell you|do you remember|previous conversation|last decision|discussed before)\b/i.test(input.message)) {
+    const matches = await recallOwnerMemory({ ownerId: input.ownerId, query: input.message, projectId: activeProjectId });
+    const relevant = matches.filter((match) => match.role === 'owner').slice(0, 3);
+    reply = relevant.length ? `I found this from our saved conversation: ${relevant.map((match) => redactSensitive(match.content)).join(' | ')}` : 'I could not find a saved conversation matching that request.';
+    const now = new Date().toISOString();
+    conversation.messages.push({ role: 'owner', content: redactSensitive(input.message) || input.message, projectId: activeProjectId, createdAt: now }, { role: 'assistant', content: reply, projectId: activeProjectId, createdAt: now });
+    conversation.updatedAt = now;
+    await storage.saveConversation(conversation);
+    return { reply, sessionId: input.sessionId, activeProjectId, interpretation };
+  }
   if (interpretation.kind === 'new-project') {
     intent = await createProjectIntent({ ownerId: input.ownerId, statement: `I want to build ${interpretation.projectName}.` });
     activeProjectId = intent.projectId;
@@ -109,7 +137,7 @@ export async function understandOwnerMessage(input: { ownerId: string; sessionId
   }
   const now = new Date().toISOString();
   conversation.activeProjectId = activeProjectId;
-  conversation.messages.push({ role: 'owner', content: input.message, projectId: activeProjectId, createdAt: now }, { role: 'assistant', content: reply, projectId: activeProjectId, createdAt: now });
+  conversation.messages.push({ role: 'owner', content: redactSensitive(input.message) || input.message, projectId: activeProjectId, createdAt: now }, { role: 'assistant', content: reply, projectId: activeProjectId, createdAt: now });
   conversation.updatedAt = now;
   await storage.saveConversation(conversation);
   return { reply, sessionId: input.sessionId, activeProjectId, interpretation, intent };
