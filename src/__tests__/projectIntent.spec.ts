@@ -102,7 +102,9 @@ describe('persistent project intent foundation', () => {
     const approved = await approveProjectIntent({ projectId: intent.projectId, ownerId: intent.ownerId });
     expect(approved.readiness).toBe('APPROVED_FOR_BUILD');
     expect(approved.approvedVersion).toBe(approved.version);
-    expect(toBuilderHandoff(approved)).toMatchObject({ specificationVersion: approved.version, contractVersion: '1' });
+    expect(toBuilderHandoff(approved)).toMatchObject({ handoffId: `handoff_${approved.projectId}_${approved.version}`, specificationVersion: approved.version, ownerApprovalVersion: approved.version, contractVersion: '1', handoffStatus: 'BUILD_AUTHORIZED', requestedBy: 'owner', representedBy: 'kc-robot' });
+    const handoff = toBuilderHandoff(approved);
+    expect(Object.keys(handoff)).not.toEqual(expect.arrayContaining(['password', 'token', 'secret', 'apiKey', 'conversation', 'hiddenReasoning']));
     const changed = await updateProjectIntent({ projectId: intent.projectId, ownerId: intent.ownerId, statement: 'It should support physical SIM.' });
     expect(changed.approvedVersion).toBeUndefined();
     expect(changed.readiness).toBe('READY_FOR_OWNER_REVIEW');

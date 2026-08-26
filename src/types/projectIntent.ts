@@ -60,8 +60,11 @@ export interface ProjectSpecification {
 
 export interface BuilderHandoff {
   contractVersion: '1';
+  handoffId: string;
   projectId: string;
+  ownerApprovalVersion: number;
   projectName?: string;
+  objective?: string;
   projectGoal?: string;
   purpose?: string;
   problem?: string;
@@ -72,11 +75,23 @@ export interface BuilderHandoff {
   designRequirements: string[];
   integrations: string[];
   securityRequirements: string[];
+  privacyRequirements: string[];
   businessRules: string[];
   constraints: string[];
   decisions: string[];
   dependencies: string[];
   acceptanceCriteria: string[];
+  unresolvedQuestions: string[];
+  rejectedRequirements: string[];
   specificationVersion: number;
   approvedAt: string;
+  requestedBy: 'owner';
+  representedBy: 'kc-robot';
+  handoffStatus: 'BUILD_AUTHORIZED';
+  decisionPolicy: {
+    normal: 'NORMAL_DEVELOPMENT';
+    sensitive: 'SENSITIVE_OWNER_REQUIRED';
+    normalExamples: string[];
+    sensitiveExamples: string[];
+  };
 }
