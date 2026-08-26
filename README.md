@@ -1,9 +1,12 @@
-# kc-Ai
-KC AI — One intelligent assistant connecting KC TELECOM, KC Earn, KC Messaging Africa, KC Business Suite, and the entire KC ecosystem.
+# KC Robot
+# KC Robot
+KC Robot is Kelvin Daniel's private personal AI and director. It helps the verified owner understand projects, organize work, manage information, coordinate authorized tasks, and report truthful status across the KC ecosystem.
 
-## KC AI foundation
+The separate Builder Board is a different product. Builder-only workspace, agent, and execution contracts remain internal reusable infrastructure and are not exposed as KC Robot functionality.
 
-KC AI is implemented as a reusable central assistant service for the full KC ecosystem rather than a project-specific chatbot. It is intentionally designed so that each KC application can integrate with the same backend and supply its own app context without assuming KC AI belongs only to one product.
+## KC Robot foundation
+
+KC Robot is implemented as a private owner-directed assistant service for the KC ecosystem rather than a project-specific chatbot. It is intentionally designed so that each KC application can supply its own app context while Owner Mode, private memory, task coordination, and protection boundaries remain owner-scoped.
 
 ## What is included in this repository
 
@@ -82,7 +85,9 @@ npm run dev
 
 ## Current status
 
-This repository contains the first usable autonomous KC AI foundation. It does not claim any live connection to KC TELECOM, KC Earn, KC Messaging Africa, KC Business Suite, or other external KC applications until those application integrations are implemented and configured.
+This repository contains the usable KC Robot private-assistant foundation. It does not claim any live connection to KC TELECOM, KC Earn, KC Messaging Africa, KC Business Suite, or other external KC applications until those application integrations are implemented and configured. Builder Board execution modules are separate foundation infrastructure and are not KC Robot product behavior.
+- Owner-only Private Build Mode is a protected KC Robot coordination context requiring both a verified Owner session and recent step-up re-authentication. It tracks private development work through `PRIVATE_BUILD -> VALIDATED -> OWNER_REVIEW_REQUIRED -> APPROVED_FOR_STAGING -> APPROVED_FOR_PRODUCTION`; approval never deploys, publishes, or activates real-money capabilities.
+- `POST /api/v1/owner/private-build` starts a protected private development context only after Owner Mode and step-up authentication succeed. `POST /api/v1/owner/private-build/:privateBuildId/tasks` creates owner-scoped coordination tasks with private-build provenance. Lifecycle transitions use `POST /api/v1/owner/private-build/:privateBuildId/transition` and require the next state in order; invalid jumps and cross-owner access fail closed. This is not a Builder Board UI or an autonomous builder.
 
 ## IMPLEMENTED NOW
 

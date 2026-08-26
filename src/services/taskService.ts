@@ -161,6 +161,7 @@ function formatSearchResult(response: WebSearchResponse, timestamp: string): { t
 
 export async function createAndAdvanceTask(input: {
   goal: string;
+  projectId?: string;
   privateBuildId?: string;
   appId?: string;
   appName?: string;
@@ -184,6 +185,7 @@ export async function createAndAdvanceTask(input: {
   const task: TaskRecord = {
     taskId: `task_${randomUUID()}`,
     goal: normalizedGoal,
+    projectId: input.projectId,
     privateBuildId: input.privateBuildId,
     appContext: input.appId || input.appName ? { appId: input.appId, appName: input.appName } : undefined,
     status: 'created',

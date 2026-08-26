@@ -40,7 +40,8 @@ describe('KC Robot owner working profile and task intake foundation', () => {
   it('loads the owner profile into task planning and never completes without validation', async () => {
     useStorage();
     const profile = await updateOwnerProfile({ ownerId: 'owner-a', preferences: { preferredWorkingMethod: 'small reversible steps', outputStyle: 'checklist', autonomy: 'routine-only' }, workingContext: ['KC Robot'] });
-    const task = await createAndAdvanceTask({ goal: 'prepare a private checklist', actorRole: 'owner', ownerProfile: profile, executeInternal: () => 'unvalidated result', verifyInternal: () => undefined });
+    const task = await createAndAdvanceTask({ goal: 'prepare a private checklist', projectId: 'project-kc-robot', actorRole: 'owner', ownerProfile: profile, executeInternal: () => 'unvalidated result', verifyInternal: () => undefined });
+    expect(task.projectId).toBe('project-kc-robot');
     expect(task.executionPlan?.ownerProfileApplied).toMatchObject({ preferredWorkingMethod: 'small reversible steps', outputStyle: 'checklist', autonomy: 'routine-only', workingContext: ['KC Robot'] });
     expect(task.progress.join(' ')).toContain('Owner profile applied');
     expect(task.status).toBe('failed');
