@@ -3,6 +3,7 @@ import type { AuditRecord } from './auditService';
 import type { TaskRecord } from '../types/task';
 import type { WalletAccount, WalletLedgerEntry, WalletMutationInput, WalletMutationResult, WalletState, WalletTransaction } from '../types/wallet';
 import type { ProjectIntent } from '../types/projectIntent';
+import type { ConversationRecord } from '../types/conversation';
 
 export interface TaskHistoryRecord {
   taskId: string;
@@ -29,6 +30,9 @@ export interface Storage {
   createProjectIntent(intent: ProjectIntent): Promise<ProjectIntent>;
   updateProjectIntent(intent: ProjectIntent): Promise<ProjectIntent>;
   getProjectIntent(projectId: string, ownerId: string): Promise<ProjectIntent | undefined>;
+  listProjectIntents(ownerId: string): Promise<ProjectIntent[]>;
+  getConversation(ownerId: string, sessionId: string): Promise<ConversationRecord | undefined>;
+  saveConversation(conversation: ConversationRecord): Promise<ConversationRecord>;
 }
 
 export class StorageUnavailableError extends Error {
@@ -46,6 +50,7 @@ export class LocalStorage implements Storage {
   private readonly audits: AuditRecord[];
   private readonly wallets: WalletState[];
   private readonly projectIntents: ProjectIntent[];
+  private readonly conversations: ConversationRecord[];
   private initialized = true;
 
   constructor(
@@ -54,11 +59,13 @@ export class LocalStorage implements Storage {
     private readonly historyPath = process.env.KC_AI_TASK_HISTORY_STORE_PATH || '.kc-ai-task-history.json',
     private readonly walletPath = process.env.KC_AI_WALLET_STORE_PATH || '.kc-ai-wallets.json',
     private readonly projectIntentPath = process.env.KC_AI_PROJECT_INTENT_STORE_PATH || '.kc-ai-project-intents.json',
+    private readonly conversationPath = process.env.KC_AI_CONVERSATION_STORE_PATH || '.kc-ai-conversations.json',
   ) {
     this.history = loadJsonArray<TaskHistoryRecord>(historyPath);
     this.audits = loadJsonArray<AuditRecord>(auditPath);
     this.wallets = loadJsonArray<WalletState>(walletPath);
     this.projectIntents = loadJsonArray<ProjectIntent>(projectIntentPath);
+    this.conversations = loadJsonArray<ConversationRecord>(conversationPath);
     for (const task of loadJsonArray<TaskRecord>(taskPath)) this.tasks.set(task.taskId, task);
   }
 
@@ -181,10 +188,21 @@ export class LocalStorage implements Storage {
     return intent ? this.copyProjectIntent(intent) : undefined;
   }
 
+  async listProjectIntents(ownerId: string): Promise<ProjectIntent[]> { this.ensureInitialized(); return this.projectIntents.filter((entry) => entry.ownerId === ownerId).map((entry) => this.copyProjectIntent(entry)); }
+  async getConversation(ownerId: string, sessionId: string): Promise<ConversationRecord | undefined> { this.ensureInitialized(); const value = this.conversations.find((entry) => entry.ownerId === ownerId && entry.sessionId === sessionId); return value ? this.copyConversation(value) : undefined; }
+  async saveConversation(conversation: ConversationRecord): Promise<ConversationRecord> {
+    this.ensureInitialized();
+    const index = this.conversations.findIndex((entry) => entry.ownerId === conversation.ownerId && entry.sessionId === conversation.sessionId);
+    if (index < 0) this.conversations.push(this.copyConversation(conversation)); else this.conversations[index] = this.copyConversation(conversation);
+    this.persist();
+    return this.copyConversation(conversation);
+  }
+
   private persist(): void {
     writeJsonArray(this.taskPath, [...this.tasks.values()]);
     writeJsonArray(this.historyPath, this.history);
     writeJsonArray(this.projectIntentPath, this.projectIntents);
+    writeJsonArray(this.conversationPath, this.conversations);
   }
 
   private copyProjectIntent(intent: ProjectIntent): ProjectIntent {
@@ -194,6 +212,8 @@ export class LocalStorage implements Storage {
   private copyTask(task: TaskRecord): TaskRecord {
     return { ...task, progress: [...task.progress], appContext: task.appContext ? { ...task.appContext } : undefined, webSearch: task.webSearch ? { ...task.webSearch, results: task.webSearch.results.map((result) => ({ ...result })) } : undefined };
   }
+
+  private copyConversation(conversation: ConversationRecord): ConversationRecord { return { ...conversation, messages: conversation.messages.map((message) => ({ ...message })) }; }
 
   private copyWallet(wallet: WalletState): WalletState {
     return { account: { ...wallet.account }, transactions: wallet.transactions.map((transaction) => ({ ...transaction })), ledger: wallet.ledger.map((entry) => ({ ...entry })) };

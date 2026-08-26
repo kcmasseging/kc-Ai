@@ -18,6 +18,7 @@ import { advancePrivateBuild, createPrivateBuild, getPrivateBuild, type PrivateB
 import { verifySystem } from './services/systemVerificationService';
 import { HealthWatchService } from './services/healthWatchService';
 import { applyCorrection, createProjectIntent, loadProjectIntent, recordRejectedRequirement, recordUnresolvedQuestion, summarizeProjectIntent, toProjectSpecification, updateProjectIntent } from './services/projectIntentService';
+import { understandOwnerMessage } from './services/conversationUnderstandingService';
 
 const app = express();
 const port = env.KC_AI_PORT;
@@ -124,7 +125,7 @@ app.post('/api/v1/welcome', (req: Request, res: Response) => {
   });
 });
 
-app.post('/api/v1/chat', (req: Request, res: Response) => {
+app.post('/api/v1/chat', async (req: Request, res: Response) => {
   const parsed = ChatRequestSchema.safeParse(req.body);
 
   if (!parsed.success) {
@@ -135,7 +136,11 @@ app.post('/api/v1/chat', (req: Request, res: Response) => {
     return;
   }
 
-  const response = generateChatReply(parsed.data);
+  const owner = ownerClaims(req);
+  const sessionId = parsed.data.sessionId || owner?.sessionId || `session_${owner?.subject || parsed.data.userId || 'public'}_${req.ip}`;
+  const response = owner
+    ? await understandOwnerMessage({ ownerId: owner.subject, sessionId, message: parsed.data.message })
+    : generateChatReply({ ...parsed.data, sessionId });
   res.json(response);
 });
 
