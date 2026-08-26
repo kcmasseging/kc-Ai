@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { LocalStorage, configureStorage } from '../services/storage';
-import { applyCorrection, createProjectIntent, loadProjectIntent, recordRejectedRequirement, recordUnresolvedQuestion, summarizeProjectIntent, toProjectSpecification, updateProjectIntent } from '../services/projectIntentService';
+import { applyCorrection, approveProjectIntent, createProjectIntent, loadProjectIntent, recordRejectedRequirement, recordUnresolvedQuestion, summarizeProjectIntent, toBuilderHandoff, toProjectSpecification, updateProjectIntent } from '../services/projectIntentService';
 
 let directory: string;
 
@@ -83,5 +83,38 @@ describe('persistent project intent foundation', () => {
     expect(summary).toContain('Confirmed requirements: none recorded');
     expect(specification).toMatchObject({ projectId: intent.projectId, projectName: 'KC Browser', confirmedRequirements: [], unresolvedQuestions: [] });
     expect(JSON.stringify(specification)).not.toContain('payments');
+  });
+
+  it('tracks structured specification fields and requires explicit approval', async () => {
+    useStorage();
+    let intent = await createProjectIntent({ ownerId: 'owner-a', statement: 'I want to build KC Telecom.' });
+    intent = await updateProjectIntent({ projectId: intent.projectId, ownerId: intent.ownerId, statement: 'It should serve customers and use secure payment API integrations.' });
+    expect(intent.targetUsers).toContain('customers');
+    expect(intent.integrations).toContain('It should serve customers and use secure payment API integrations');
+    expect(intent.securityRequirements).toContain('It should serve customers and use secure payment API integrations');
+    expect(() => toBuilderHandoff(intent)).toThrow('currently approved');
+  });
+
+  it('approves an exact version and invalidates approval after a material change', async () => {
+    useStorage();
+    let intent = await createProjectIntent({ ownerId: 'owner-a', statement: 'I want to build KC Telecom.' });
+    intent = await updateProjectIntent({ projectId: intent.projectId, ownerId: intent.ownerId, statement: 'It should sell airtime.' });
+    const approved = await approveProjectIntent({ projectId: intent.projectId, ownerId: intent.ownerId });
+    expect(approved.readiness).toBe('APPROVED_FOR_BUILD');
+    expect(approved.approvedVersion).toBe(approved.version);
+    expect(toBuilderHandoff(approved)).toMatchObject({ specificationVersion: approved.version, contractVersion: '1' });
+    const changed = await updateProjectIntent({ projectId: intent.projectId, ownerId: intent.ownerId, statement: 'It should support physical SIM.' });
+    expect(changed.approvedVersion).toBeUndefined();
+    expect(changed.readiness).toBe('READY_FOR_OWNER_REVIEW');
+    expect(() => toBuilderHandoff(changed)).toThrow('currently approved');
+  });
+
+  it('records a correction in the current specification instead of retaining the old decision', async () => {
+    useStorage();
+    let intent = await createProjectIntent({ ownerId: 'owner-a', statement: 'I want to build KC Telecom.' });
+    intent = await updateProjectIntent({ projectId: intent.projectId, ownerId: intent.ownerId, statement: 'It should include KC Browser.' });
+    intent = await applyCorrection({ projectId: intent.projectId, ownerId: intent.ownerId, statement: 'No. KC Browser must be a completely separate product.' });
+    expect(intent.confirmedRequirements.some((value) => value.toLowerCase().includes('browser'))).toBe(false);
+    expect(intent.decisions).toContain('KC Browser is a separate product');
   });
 });

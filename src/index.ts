@@ -17,7 +17,7 @@ import { SecretBus, type SecretType } from './services/secretBusService';
 import { advancePrivateBuild, createPrivateBuild, getPrivateBuild, type PrivateBuildStatus } from './services/privateBuildService';
 import { verifySystem } from './services/systemVerificationService';
 import { HealthWatchService } from './services/healthWatchService';
-import { applyCorrection, createProjectIntent, loadProjectIntent, recordRejectedRequirement, recordUnresolvedQuestion, summarizeProjectIntent, toProjectSpecification, updateProjectIntent } from './services/projectIntentService';
+import { applyCorrection, approveProjectIntent, createProjectIntent, loadProjectIntent, recordRejectedRequirement, recordUnresolvedQuestion, summarizeProjectIntent, toBuilderHandoff, toProjectSpecification, updateProjectIntent } from './services/projectIntentService';
 import { understandOwnerMessage } from './services/conversationUnderstandingService';
 
 const app = express();
@@ -213,6 +213,19 @@ app.patch('/api/v1/owner/project-intents/:projectId', requireOwner, async (req: 
       : await updateProjectIntent({ projectId, ownerId: res.locals.owner.subject, statement: req.body.statement });
     res.json({ intent, summary: summarizeProjectIntent(intent), specification: toProjectSpecification(intent) });
   } catch { res.status(404).json({ error: 'Project intent not found' }); }
+});
+
+app.post('/api/v1/owner/project-intents/:projectId/approve', requireOwner, async (req: Request, res: Response) => {
+  const projectId = Array.isArray(req.params.projectId) ? req.params.projectId[0] : req.params.projectId;
+  try { const intent = await approveProjectIntent({ projectId, ownerId: res.locals.owner.subject }); res.json({ intent, specification: toProjectSpecification(intent) }); }
+  catch (error) { res.status(409).json({ error: error instanceof Error ? error.message : 'Project specification cannot be approved' }); }
+});
+
+app.get('/api/v1/owner/project-intents/:projectId/handoff', requireOwner, async (req: Request, res: Response) => {
+  const projectId = Array.isArray(req.params.projectId) ? req.params.projectId[0] : req.params.projectId;
+  const intent = await loadProjectIntent(projectId, res.locals.owner.subject);
+  if (!intent) { res.status(404).json({ error: 'Project intent not found' }); return; }
+  try { res.json({ handoff: toBuilderHandoff(intent) }); } catch (error) { res.status(409).json({ error: error instanceof Error ? error.message : 'Project specification is not approved' }); }
 });
 
 app.post('/api/v1/owner/project-intents/:projectId/rejections', requireOwner, async (req: Request, res: Response) => {

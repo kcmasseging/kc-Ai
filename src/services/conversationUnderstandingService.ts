@@ -32,6 +32,7 @@ export function interpretOwnerMessage(message: string, conversation?: Conversati
   if (/^(?:can|could|would|will|is|does|do)\b/i.test(text) || /\?$/.test(message)) return InterpretationSchema.parse({ kind: 'question', confidence: 'HIGH', requirement: text });
   if (/^(?:no|actually|forget|i changed my mind|keep .* but remove)\b/i.test(text)) {
     if (/not\s+(?:make it\s+)?(?:eSIM|only eSIM)\s+only/i.test(text)) return InterpretationSchema.parse({ kind: 'correction', confidence: 'HIGH', target: 'eSIM', requirement: 'It should support physical SIM.' });
+    if (/completely separate|separate product/i.test(text)) return InterpretationSchema.parse({ kind: 'correction', confidence: 'HIGH', target: 'browser', requirement: 'KC Browser is a separate product.' });
     const target = lower.includes('remove that') || lower.includes('forget that') ? undefined : clean(text.replace(/^no,?\s*/i, ''));
     return InterpretationSchema.parse({ kind: target ? 'correction' : 'correction', confidence: target ? 'HIGH' : 'AMBIGUOUS', target, requirement: target });
   }
@@ -116,6 +117,7 @@ export async function understandOwnerMessage(input: { ownerId: string; sessionId
 
 export function projectReadiness(intent: ProjectIntent): 'NOT_READY' | 'NEEDS_CLARIFICATION' | 'READY_FOR_SPECIFICATION' {
   if (!intent.projectName || !intent.projectGoal) return 'NOT_READY';
+  if (intent.confirmedRequirements.length === 0) return 'NEEDS_CLARIFICATION';
   if (intent.unresolvedQuestions.length > 0 || intent.confirmedRequirements.length === 0) return 'NEEDS_CLARIFICATION';
   return 'READY_FOR_SPECIFICATION';
 }

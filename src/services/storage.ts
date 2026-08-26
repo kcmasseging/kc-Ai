@@ -206,7 +206,7 @@ export class LocalStorage implements Storage {
   }
 
   private copyProjectIntent(intent: ProjectIntent): ProjectIntent {
-    return { ...intent, confirmedRequirements: [...intent.confirmedRequirements], inferredRequirements: [...intent.inferredRequirements], rejectedRequirements: [...intent.rejectedRequirements], unresolvedQuestions: [...intent.unresolvedQuestions], constraints: [...intent.constraints], decisions: [...intent.decisions], corrections: [...intent.corrections] };
+    return { ...intent, targetUsers: [...(intent.targetUsers || [])], confirmedRequirements: [...(intent.confirmedRequirements || [])], functionalRequirements: [...(intent.functionalRequirements || [])], nonFunctionalRequirements: [...(intent.nonFunctionalRequirements || [])], designRequirements: [...(intent.designRequirements || [])], integrations: [...(intent.integrations || [])], securityRequirements: [...(intent.securityRequirements || [])], businessRules: [...(intent.businessRules || [])], inferredRequirements: [...(intent.inferredRequirements || [])], rejectedRequirements: [...(intent.rejectedRequirements || [])], unresolvedQuestions: [...(intent.unresolvedQuestions || [])], constraints: [...(intent.constraints || [])], decisions: [...(intent.decisions || [])], corrections: [...(intent.corrections || [])], dependencies: [...(intent.dependencies || [])], acceptanceCriteria: [...(intent.acceptanceCriteria || [])] };
   }
 
   private copyTask(task: TaskRecord): TaskRecord {
