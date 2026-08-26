@@ -17,6 +17,7 @@ import { SecretBus, type SecretType } from './services/secretBusService';
 import { advancePrivateBuild, createPrivateBuild, getPrivateBuild, type PrivateBuildStatus } from './services/privateBuildService';
 import { verifySystem } from './services/systemVerificationService';
 import { HealthWatchService } from './services/healthWatchService';
+import { applyCorrection, createProjectIntent, loadProjectIntent, recordRejectedRequirement, recordUnresolvedQuestion, summarizeProjectIntent, toProjectSpecification, updateProjectIntent } from './services/projectIntentService';
 
 const app = express();
 const port = env.KC_AI_PORT;
@@ -183,6 +184,44 @@ app.post('/api/v1/auth/reauthenticate', requireOwner, async (req: Request, res: 
     return;
   }
   res.json({ stepUpToken: token, expiresInSeconds: 300 });
+});
+
+app.post('/api/v1/owner/project-intents', requireOwner, async (req: Request, res: Response) => {
+  if (typeof req.body?.statement !== 'string' || !req.body.statement.trim()) { res.status(400).json({ error: 'A non-empty project statement is required' }); return; }
+  const intent = await createProjectIntent({ ownerId: res.locals.owner.subject, statement: req.body.statement, projectId: typeof req.body.projectId === 'string' ? req.body.projectId : undefined });
+  res.status(201).json({ intent, summary: summarizeProjectIntent(intent), specification: toProjectSpecification(intent) });
+});
+
+app.get('/api/v1/owner/project-intents/:projectId', requireOwner, async (req: Request, res: Response) => {
+  const projectId = Array.isArray(req.params.projectId) ? req.params.projectId[0] : req.params.projectId;
+  const intent = await loadProjectIntent(projectId, res.locals.owner.subject);
+  if (!intent) { res.status(404).json({ error: 'Project intent not found' }); return; }
+  res.json({ intent, summary: summarizeProjectIntent(intent), specification: toProjectSpecification(intent) });
+});
+
+app.patch('/api/v1/owner/project-intents/:projectId', requireOwner, async (req: Request, res: Response) => {
+  const projectId = Array.isArray(req.params.projectId) ? req.params.projectId[0] : req.params.projectId;
+  if (typeof req.body?.statement !== 'string' || !req.body.statement.trim()) { res.status(400).json({ error: 'A non-empty project statement is required' }); return; }
+  try {
+    const intent = req.body.correction === true
+      ? await applyCorrection({ projectId, ownerId: res.locals.owner.subject, statement: req.body.statement })
+      : await updateProjectIntent({ projectId, ownerId: res.locals.owner.subject, statement: req.body.statement });
+    res.json({ intent, summary: summarizeProjectIntent(intent), specification: toProjectSpecification(intent) });
+  } catch { res.status(404).json({ error: 'Project intent not found' }); }
+});
+
+app.post('/api/v1/owner/project-intents/:projectId/rejections', requireOwner, async (req: Request, res: Response) => {
+  const projectId = Array.isArray(req.params.projectId) ? req.params.projectId[0] : req.params.projectId;
+  if (typeof req.body?.requirement !== 'string' || !req.body.requirement.trim()) { res.status(400).json({ error: 'A requirement is required' }); return; }
+  try { res.json({ intent: await recordRejectedRequirement({ projectId, ownerId: res.locals.owner.subject, requirement: req.body.requirement }) }); }
+  catch { res.status(404).json({ error: 'Project intent not found' }); }
+});
+
+app.post('/api/v1/owner/project-intents/:projectId/questions', requireOwner, async (req: Request, res: Response) => {
+  const projectId = Array.isArray(req.params.projectId) ? req.params.projectId[0] : req.params.projectId;
+  if (typeof req.body?.question !== 'string' || !req.body.question.trim()) { res.status(400).json({ error: 'A question is required' }); return; }
+  try { res.json({ intent: await recordUnresolvedQuestion({ projectId, ownerId: res.locals.owner.subject, question: req.body.question }) }); }
+  catch { res.status(404).json({ error: 'Project intent not found' }); }
 });
 
 app.post('/api/v1/owner/system-verification', requireOwner, async (req: Request, res: Response) => {

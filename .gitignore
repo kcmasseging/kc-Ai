@@ -9,4 +9,5 @@ coverage
 .kc-ai-task-history.json
 .kc-ai-wallets.json
 .kc-ai-secrets.json
+.kc-ai-project-intents.json
 .kc-ai-secrets.json

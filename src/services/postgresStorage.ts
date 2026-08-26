@@ -2,6 +2,7 @@ import type { AuditRecord } from './auditService';
 import { InsufficientBalanceError, StorageUnavailableError, type Storage, type TaskHistoryRecord } from './storage';
 import type { TaskRecord } from '../types/task';
 import type { WalletAccount, WalletLedgerEntry, WalletMutationInput, WalletMutationResult, WalletState, WalletTransaction } from '../types/wallet';
+import type { ProjectIntent } from '../types/projectIntent';
 
 interface QueryResult<T = unknown> { rows: T[]; rowCount: number | null; }
 interface PoolClient { query<T = unknown>(text: string, values?: unknown[]): Promise<QueryResult<T>>; release(): void; }
@@ -68,6 +69,15 @@ CREATE TABLE IF NOT EXISTS kc_ai_wallet_ledger (
   created_at timestamptz NOT NULL
 );
 CREATE INDEX IF NOT EXISTS kc_ai_wallet_ledger_balance_idx ON kc_ai_wallet_ledger(wallet_id, currency);
+CREATE TABLE IF NOT EXISTS kc_ai_project_intents (
+  project_id text PRIMARY KEY,
+  owner_id text NOT NULL,
+  intent jsonb NOT NULL,
+  version bigint NOT NULL,
+  created_at timestamptz NOT NULL,
+  updated_at timestamptz NOT NULL
+);
+CREATE INDEX IF NOT EXISTS kc_ai_project_intents_owner_idx ON kc_ai_project_intents(owner_id);
 `;
 
 export interface PostgresStorageOptions {
@@ -170,6 +180,24 @@ export class PostgresStorage implements Storage {
   }
 
   async clearAuditRecords(): Promise<void> { this.ensureInitialized(); const client = await this.getClient(); try { await client.query('DELETE FROM kc_ai_audit_records'); } finally { client.release(); } }
+
+  async createProjectIntent(intent: ProjectIntent): Promise<ProjectIntent> {
+    this.ensureInitialized(); const client = await this.getClient();
+    try { await client.query('INSERT INTO kc_ai_project_intents (project_id, owner_id, intent, version, created_at, updated_at) VALUES ($1, $2, $3::jsonb, $4, $5, $6)', [intent.projectId, intent.ownerId, JSON.stringify(intent), intent.version, intent.createdAt, intent.updatedAt]); return { ...intent }; }
+    finally { client.release(); }
+  }
+
+  async updateProjectIntent(intent: ProjectIntent): Promise<ProjectIntent> {
+    this.ensureInitialized(); const client = await this.getClient();
+    try { const result = await client.query('UPDATE kc_ai_project_intents SET intent = $3::jsonb, version = $4, updated_at = $5 WHERE project_id = $1 AND owner_id = $2', [intent.projectId, intent.ownerId, JSON.stringify(intent), intent.version, intent.updatedAt]); if (!result.rowCount) throw new StorageUnavailableError('Project intent does not exist'); return { ...intent }; }
+    finally { client.release(); }
+  }
+
+  async getProjectIntent(projectId: string, ownerId: string): Promise<ProjectIntent | undefined> {
+    this.ensureInitialized(); const client = await this.getClient();
+    try { const result = await client.query<{ intent: ProjectIntent }>('SELECT intent FROM kc_ai_project_intents WHERE project_id = $1 AND owner_id = $2', [projectId, ownerId]); return result.rows[0]?.intent ? { ...result.rows[0].intent } : undefined; }
+    finally { client.release(); }
+  }
 
   async createWalletAccount(account: WalletAccount): Promise<WalletAccount> {
     this.ensureInitialized(); const client = await this.getClient();

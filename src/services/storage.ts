@@ -2,6 +2,7 @@ import { loadJsonArray, writeJsonArray } from './localStore';
 import type { AuditRecord } from './auditService';
 import type { TaskRecord } from '../types/task';
 import type { WalletAccount, WalletLedgerEntry, WalletMutationInput, WalletMutationResult, WalletState, WalletTransaction } from '../types/wallet';
+import type { ProjectIntent } from '../types/projectIntent';
 
 export interface TaskHistoryRecord {
   taskId: string;
@@ -25,6 +26,9 @@ export interface Storage {
   getWalletAccount(ownerId: string): Promise<WalletAccount | undefined>;
   getWalletState(walletId: string): Promise<WalletState | undefined>;
   applyWalletMutation(input: WalletMutationInput): Promise<WalletMutationResult>;
+  createProjectIntent(intent: ProjectIntent): Promise<ProjectIntent>;
+  updateProjectIntent(intent: ProjectIntent): Promise<ProjectIntent>;
+  getProjectIntent(projectId: string, ownerId: string): Promise<ProjectIntent | undefined>;
 }
 
 export class StorageUnavailableError extends Error {
@@ -41,6 +45,7 @@ export class LocalStorage implements Storage {
   private readonly history: TaskHistoryRecord[];
   private readonly audits: AuditRecord[];
   private readonly wallets: WalletState[];
+  private readonly projectIntents: ProjectIntent[];
   private initialized = true;
 
   constructor(
@@ -48,10 +53,12 @@ export class LocalStorage implements Storage {
     private readonly auditPath = process.env.KC_AI_AUDIT_STORE_PATH || '.kc-ai-audit.json',
     private readonly historyPath = process.env.KC_AI_TASK_HISTORY_STORE_PATH || '.kc-ai-task-history.json',
     private readonly walletPath = process.env.KC_AI_WALLET_STORE_PATH || '.kc-ai-wallets.json',
+    private readonly projectIntentPath = process.env.KC_AI_PROJECT_INTENT_STORE_PATH || '.kc-ai-project-intents.json',
   ) {
     this.history = loadJsonArray<TaskHistoryRecord>(historyPath);
     this.audits = loadJsonArray<AuditRecord>(auditPath);
     this.wallets = loadJsonArray<WalletState>(walletPath);
+    this.projectIntents = loadJsonArray<ProjectIntent>(projectIntentPath);
     for (const task of loadJsonArray<TaskRecord>(taskPath)) this.tasks.set(task.taskId, task);
   }
 
@@ -152,9 +159,36 @@ export class LocalStorage implements Storage {
     return { transaction: { ...transaction }, duplicate: false };
   }
 
+  async createProjectIntent(intent: ProjectIntent): Promise<ProjectIntent> {
+    this.ensureInitialized();
+    this.projectIntents.push(this.copyProjectIntent(intent));
+    this.persist();
+    return this.copyProjectIntent(intent);
+  }
+
+  async updateProjectIntent(intent: ProjectIntent): Promise<ProjectIntent> {
+    this.ensureInitialized();
+    const index = this.projectIntents.findIndex((entry) => entry.projectId === intent.projectId && entry.ownerId === intent.ownerId);
+    if (index < 0) throw new StorageUnavailableError('Project intent does not exist');
+    this.projectIntents[index] = this.copyProjectIntent(intent);
+    this.persist();
+    return this.copyProjectIntent(intent);
+  }
+
+  async getProjectIntent(projectId: string, ownerId: string): Promise<ProjectIntent | undefined> {
+    this.ensureInitialized();
+    const intent = this.projectIntents.find((entry) => entry.projectId === projectId && entry.ownerId === ownerId);
+    return intent ? this.copyProjectIntent(intent) : undefined;
+  }
+
   private persist(): void {
     writeJsonArray(this.taskPath, [...this.tasks.values()]);
     writeJsonArray(this.historyPath, this.history);
+    writeJsonArray(this.projectIntentPath, this.projectIntents);
+  }
+
+  private copyProjectIntent(intent: ProjectIntent): ProjectIntent {
+    return { ...intent, confirmedRequirements: [...intent.confirmedRequirements], inferredRequirements: [...intent.inferredRequirements], rejectedRequirements: [...intent.rejectedRequirements], unresolvedQuestions: [...intent.unresolvedQuestions], constraints: [...intent.constraints], decisions: [...intent.decisions], corrections: [...intent.corrections] };
   }
 
   private copyTask(task: TaskRecord): TaskRecord {
