@@ -4,7 +4,7 @@ import { env, allowedOrigins } from './config/env';
 import { createHealthResponse } from './services/healthService';
 import { createWelcomeMessage } from './services/welcomeService';
 import { createSessionRecord } from './services/sessionService';
-import { generateChatReply, ChatRequestSchema } from './services/chatService';
+import { ChatRequestSchema } from './services/chatService';
 import { createTtsResponse } from './services/ttsService';
 import { listCapabilities } from './services/capabilityService';
 import { createAndAdvanceTask, getTask, listTaskHistory, listTasks } from './services/taskService';
@@ -126,7 +126,7 @@ app.post('/api/v1/welcome', (req: Request, res: Response) => {
   });
 });
 
-app.post('/api/v1/chat', async (req: Request, res: Response) => {
+app.post('/api/v1/chat', requireOwner, async (req: Request, res: Response) => {
   const parsed = ChatRequestSchema.safeParse(req.body);
 
   if (!parsed.success) {
@@ -137,11 +137,9 @@ app.post('/api/v1/chat', async (req: Request, res: Response) => {
     return;
   }
 
-  const owner = ownerClaims(req);
-  const sessionId = parsed.data.sessionId || owner?.sessionId || `session_${owner?.subject || parsed.data.userId || 'public'}_${req.ip}`;
-  const response = owner
-    ? await understandOwnerMessage({ ownerId: owner.subject, sessionId, message: parsed.data.message })
-    : generateChatReply({ ...parsed.data, sessionId });
+  const owner = res.locals.owner as NonNullable<ReturnType<typeof ownerClaims>>;
+  const sessionId = parsed.data.sessionId || owner.sessionId;
+  const response = await understandOwnerMessage({ ownerId: owner.subject, sessionId, message: parsed.data.message });
   res.json(response);
 });
 
@@ -210,7 +208,7 @@ app.post('/api/v1/owner/tasks', requireOwner, async (req: Request, res: Response
   const profile = await loadOwnerProfile(res.locals.owner.subject);
   const projectId = typeof req.body.projectId === 'string' && req.body.projectId.trim() ? req.body.projectId.trim() : undefined;
   if (projectId && !(await loadProjectIntent(projectId, res.locals.owner.subject))) { res.status(404).json({ error: 'Owner project context not found' }); return; }
-  const task = await createAndAdvanceTask({ goal: req.body.goal, projectId, actorRole: 'owner', appId: 'kc-robot', appName: 'KC Robot', ownerProfile: profile });
+  const task = await createAndAdvanceTask({ goal: req.body.goal, ownerId: res.locals.owner.subject, projectId, actorRole: 'owner', appId: 'kc-robot', appName: 'KC Robot', ownerProfile: profile });
   res.status(task.status === 'blocked' ? 409 : 201).json({ task });
 });
 
@@ -298,7 +296,7 @@ app.post('/api/v1/owner/private-build/:privateBuildId/tasks', requireOwner, requ
     res.status(400).json({ error: 'A non-empty private build task goal is required' });
     return;
   }
-  const task = await createAndAdvanceTask({ goal: req.body.goal, privateBuildId: res.locals.privateBuild.privateBuildId, actorRole: 'owner' });
+  const task = await createAndAdvanceTask({ goal: req.body.goal, ownerId: res.locals.owner.subject, privateBuildId: res.locals.privateBuild.privateBuildId, actorRole: 'owner' });
   res.status(task.status === 'blocked' ? 409 : 201).json({ task });
 });
 
@@ -359,7 +357,7 @@ app.get('/api/v1/capabilities', (_req: Request, res: Response) => {
   res.json({ capabilities: listCapabilities() });
 });
 
-app.post('/api/v1/tasks', async (req: Request, res: Response) => {
+app.post('/api/v1/tasks', requireOwner, async (req: Request, res: Response) => {
   if (typeof req.body?.goal !== 'string' || req.body.goal.trim().length === 0) {
     res.status(400).json({ error: 'A non-empty goal is required' });
     return;
@@ -367,17 +365,18 @@ app.post('/api/v1/tasks', async (req: Request, res: Response) => {
 
   const task = await createAndAdvanceTask({
     goal: req.body.goal,
+    ownerId: res.locals.owner.subject,
     appId: req.body.appId,
     appName: req.body.appName,
-    actorRole: ownerClaims(req) ? 'owner' : 'user',
+    actorRole: 'owner',
     continuationTaskId: typeof req.body.continuationTaskId === 'string' ? req.body.continuationTaskId : undefined,
   });
   res.status(task.status === 'blocked' ? 409 : 201).json({ task });
 });
 
-app.get('/api/v1/tasks/:taskId', async (req: Request, res: Response) => {
+app.get('/api/v1/tasks/:taskId', requireOwner, async (req: Request, res: Response) => {
   const taskId = Array.isArray(req.params.taskId) ? req.params.taskId[0] : req.params.taskId;
-  const task = await getTask(taskId);
+  const task = await getTask(taskId, res.locals.owner.subject);
   if (!task) {
     res.status(404).json({ error: 'Task not found' });
     return;
@@ -385,13 +384,13 @@ app.get('/api/v1/tasks/:taskId', async (req: Request, res: Response) => {
   res.json({ task });
 });
 
-app.get('/api/v1/tasks', async (_req: Request, res: Response) => {
-  res.json({ tasks: await listTasks() });
+app.get('/api/v1/tasks', requireOwner, async (_req: Request, res: Response) => {
+  res.json({ tasks: await listTasks(res.locals.owner.subject) });
 });
 
-app.get('/api/v1/tasks/:taskId/history', async (req: Request, res: Response) => {
+app.get('/api/v1/tasks/:taskId/history', requireOwner, async (req: Request, res: Response) => {
   const taskId = Array.isArray(req.params.taskId) ? req.params.taskId[0] : req.params.taskId;
-  res.json({ history: await listTaskHistory(taskId) });
+  res.json({ history: await listTaskHistory(taskId, res.locals.owner.subject) });
 });
 
 app.get('/api/v1/owner/audit', requireOwner, async (_req: Request, res: Response) => {

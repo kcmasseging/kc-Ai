@@ -22,6 +22,7 @@ export type CapabilityStatus =
 
 export interface TaskRecord {
   taskId: string;
+  ownerId?: string;
   goal: string;
   projectId?: string;
   privateBuildId?: string;

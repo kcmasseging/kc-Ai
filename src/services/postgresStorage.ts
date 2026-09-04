@@ -162,24 +162,39 @@ export class PostgresStorage implements Storage {
     } catch (error) { try { await client.query('ROLLBACK'); } catch {} throw new StorageUnavailableError('Task update transaction failed', { cause: error }); } finally { client.release(); }
   }
 
-  async getTask(taskId: string): Promise<TaskRecord | undefined> { return (await this.queryTask(taskId)).task; }
+  async getTask(taskId: string, ownerId?: string): Promise<TaskRecord | undefined> { return (await this.queryTask(taskId, ownerId)).task; }
 
-  private async queryTask(taskId: string): Promise<{ task?: TaskRecord }> {
+  private async queryTask(taskId: string, ownerId?: string): Promise<{ task?: TaskRecord }> {
     this.ensureInitialized();
     const client = await this.getClient();
-    try { const result = await client.query<{ task: TaskRecord }>('SELECT task FROM kc_ai_tasks WHERE task_id = $1', [taskId]); return { task: result.rows[0]?.task }; }
+    try {
+      const result = ownerId
+        ? await client.query<{ task: TaskRecord }>("SELECT task FROM kc_ai_tasks WHERE task_id = $1 AND task->>'ownerId' = $2", [taskId, ownerId])
+        : await client.query<{ task: TaskRecord }>('SELECT task FROM kc_ai_tasks WHERE task_id = $1', [taskId]);
+      return { task: result.rows[0]?.task };
+    }
     finally { client.release(); }
   }
 
-  async listTasks(): Promise<TaskRecord[]> {
+  async listTasks(ownerId?: string): Promise<TaskRecord[]> {
     this.ensureInitialized(); const client = await this.getClient();
-    try { const result = await client.query<{ task: TaskRecord }>('SELECT task FROM kc_ai_tasks ORDER BY created_at'); return result.rows.map((row) => ({ ...row.task, progress: [...row.task.progress] })); }
+    try {
+      const result = ownerId
+        ? await client.query<{ task: TaskRecord }>("SELECT task FROM kc_ai_tasks WHERE task->>'ownerId' = $1 ORDER BY created_at", [ownerId])
+        : await client.query<{ task: TaskRecord }>('SELECT task FROM kc_ai_tasks ORDER BY created_at');
+      return result.rows.map((row) => ({ ...row.task, progress: [...row.task.progress] }));
+    }
     finally { client.release(); }
   }
 
-  async listTaskHistory(taskId: string): Promise<TaskHistoryRecord[]> {
+  async listTaskHistory(taskId: string, ownerId?: string): Promise<TaskHistoryRecord[]> {
     this.ensureInitialized(); const client = await this.getClient();
-    try { const result = await client.query<TaskHistoryRecord>('SELECT task_id AS "taskId", status, recorded_at AS "recordedAt", task FROM kc_ai_task_history WHERE task_id = $1 ORDER BY history_id', [taskId]); return result.rows.map((row) => ({ ...row, task: { ...row.task, progress: [...row.task.progress] } })); }
+    try {
+      const result = ownerId
+        ? await client.query<TaskHistoryRecord>("SELECT task_id AS \"taskId\", status, recorded_at AS \"recordedAt\", task FROM kc_ai_task_history WHERE task_id = $1 AND task->>'ownerId' = $2 ORDER BY history_id", [taskId, ownerId])
+        : await client.query<TaskHistoryRecord>('SELECT task_id AS "taskId", status, recorded_at AS "recordedAt", task FROM kc_ai_task_history WHERE task_id = $1 ORDER BY history_id', [taskId]);
+      return result.rows.map((row) => ({ ...row, task: { ...row.task, progress: [...row.task.progress] } }));
+    }
     finally { client.release(); }
   }
 

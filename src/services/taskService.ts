@@ -161,6 +161,7 @@ function formatSearchResult(response: WebSearchResponse, timestamp: string): { t
 
 export async function createAndAdvanceTask(input: {
   goal: string;
+  ownerId?: string;
   projectId?: string;
   privateBuildId?: string;
   appId?: string;
@@ -177,13 +178,14 @@ export async function createAndAdvanceTask(input: {
   const normalizedGoal = rawGoal.trim();
   const now = new Date().toISOString();
   const reference = explicitTaskReference(normalizedGoal, input.continuationTaskId);
-  const referencedTask = reference ? await getStorage().getTask(reference) : undefined;
+  const referencedTask = reference ? await getStorage().getTask(reference, input.ownerId) : undefined;
   const referencedCapability = referencedTask?.requiredCapability;
   const contextId = `context_${randomUUID()}`;
   const rawGoalHash = goalHash(rawGoal);
   const executionContext: TaskRecord['executionContext'] = { contextId, rawGoalHash, classificationTimestamp: now, priorContextUsed: Boolean(reference), explicitTaskReference: reference };
   const task: TaskRecord = {
     taskId: `task_${randomUUID()}`,
+    ownerId: input.ownerId,
     goal: normalizedGoal,
     projectId: input.projectId,
     privateBuildId: input.privateBuildId,
@@ -415,14 +417,14 @@ export async function createAndAdvanceTask(input: {
   return { ...task, progress: [...task.progress] };
 }
 
-export function getTask(taskId: string): Promise<TaskRecord | undefined> {
-  return getStorage().getTask(taskId);
+export function getTask(taskId: string, ownerId?: string): Promise<TaskRecord | undefined> {
+  return getStorage().getTask(taskId, ownerId);
 }
 
-export function listTasks(): Promise<TaskRecord[]> {
-  return getStorage().listTasks();
+export function listTasks(ownerId?: string): Promise<TaskRecord[]> {
+  return getStorage().listTasks(ownerId);
 }
 
-export function listTaskHistory(taskId: string) { return getStorage().listTaskHistory(taskId); }
+export function listTaskHistory(taskId: string, ownerId?: string) { return getStorage().listTaskHistory(taskId, ownerId); }
 
 export async function reloadTasks(): Promise<void> { await getStorage().initialize(); }

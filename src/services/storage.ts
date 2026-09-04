@@ -18,9 +18,9 @@ export interface Storage {
   close(): Promise<void>;
   createTask(task: TaskRecord): Promise<TaskRecord>;
   updateTask(task: TaskRecord): Promise<TaskRecord>;
-  getTask(taskId: string): Promise<TaskRecord | undefined>;
-  listTasks(): Promise<TaskRecord[]>;
-  listTaskHistory(taskId: string): Promise<TaskHistoryRecord[]>;
+  getTask(taskId: string, ownerId?: string): Promise<TaskRecord | undefined>;
+  listTasks(ownerId?: string): Promise<TaskRecord[]>;
+  listTaskHistory(taskId: string, ownerId?: string): Promise<TaskHistoryRecord[]>;
   appendAudit(record: AuditRecord): Promise<AuditRecord>;
   listAuditRecords(): Promise<AuditRecord[]>;
   clearAuditRecords(): Promise<void>;
@@ -102,20 +102,20 @@ export class LocalStorage implements Storage {
     return this.copyTask(task);
   }
 
-  async getTask(taskId: string): Promise<TaskRecord | undefined> {
+  async getTask(taskId: string, ownerId?: string): Promise<TaskRecord | undefined> {
     this.ensureInitialized();
     const task = this.tasks.get(taskId);
-    return task ? this.copyTask(task) : undefined;
+    return task && (!ownerId || task.ownerId === ownerId) ? this.copyTask(task) : undefined;
   }
 
-  async listTasks(): Promise<TaskRecord[]> {
+  async listTasks(ownerId?: string): Promise<TaskRecord[]> {
     this.ensureInitialized();
-    return [...this.tasks.values()].map((task) => this.copyTask(task));
+    return [...this.tasks.values()].filter((task) => !ownerId || task.ownerId === ownerId).map((task) => this.copyTask(task));
   }
 
-  async listTaskHistory(taskId: string): Promise<TaskHistoryRecord[]> {
+  async listTaskHistory(taskId: string, ownerId?: string): Promise<TaskHistoryRecord[]> {
     this.ensureInitialized();
-    return this.history.filter((entry) => entry.taskId === taskId).map((entry) => ({ ...entry, task: this.copyTask(entry.task) }));
+    return this.history.filter((entry) => entry.taskId === taskId && (!ownerId || entry.task.ownerId === ownerId)).map((entry) => ({ ...entry, task: this.copyTask(entry.task) }));
   }
 
   async appendAudit(record: AuditRecord): Promise<AuditRecord> {
